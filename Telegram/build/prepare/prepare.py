@@ -391,7 +391,7 @@ def runStages():
         prefix = '[' + str(index) + '/' + str(count) + '](' + stage['location'] + '/' + stage['name'] + version + ')'
         print(prefix + ': ', end = '', flush=True)
         stage['key'] = computeCacheKey(stage)
-        commands = removeDir(stage['name']) + '\n' + stage['commands']
+        commands = ('' if win and stage['name'].startswith('qt_5.') and (os.path.exists(stage['name']) or os.path.exists(os.path.join(stage['directory'], stage['name']))) else removeDir(stage['name'])) + '\n' + stage['commands']
         checkResult = 'Forced' if len(onlyStages) > 0 else checkCacheKey(stage)
         if checkResult == 'Good':
             print('SKIPPING')
@@ -402,7 +402,7 @@ def runStages():
             if checkResult == 'Stale':
                 print('CHANGED, ', end='')
             if rebuildStale:
-                checkResult == 'Rebuild'
+                checkResult = 'Rebuild'
             else:
                 print('(r)ebuild, rebuild (a)ll, (s)kip, (p)rint, (q)uit?: ', end='', flush=True)
                 while True:
@@ -471,14 +471,16 @@ win:
     SET CHERE_INVOKING=enabled_from_arguments
     SET MSYS2_PATH_TYPE=inherit
 
-    powershell -Command "iwr -OutFile ./msys64.exe https://github.com/msys2/msys2-installer/releases/download/2025-08-30/msys2-base-x86_64-20250830.sfx.exe"
+    if not exist msys64.exe powershell -Command "iwr -OutFile ./msys64.exe https://github.com/msys2/msys2-installer/releases/download/2025-08-30/msys2-base-x86_64-20250830.sfx.exe"
     msys64.exe
     del msys64.exe
+    powershell -Command "Set-Content -Path ./msys64/etc/pacman.d/mirrorlist.msys -Value ('Server = https://mirrors.tuna.tsinghua.edu.cn/msys2/msys/$arch/' + [Environment]::NewLine + (Get-Content ./msys64/etc/pacman.d/mirrorlist.msys -Raw))"
+    powershell -Command "Set-Content -Path ./msys64/etc/pacman.d/mirrorlist.mingw -Value ('Server = https://mirrors.tuna.tsinghua.edu.cn/msys2/mingw/$repo/' + [Environment]::NewLine + (Get-Content ./msys64/etc/pacman.d/mirrorlist.mingw -Raw))"
 
     bash -c "pacman-key --init; pacman-key --populate; pacman -Syu --noconfirm"
     pacman -Syu --noconfirm ^
         make ^
-        mingw-w64-x86_64-diffutils ^
+        diffutils ^
         mingw-w64-x86_64-gperf ^
         mingw-w64-x86_64-nasm ^
         mingw-w64-x86_64-perl ^
@@ -643,7 +645,7 @@ mac:
 """)
 
 stage('openssl3', """
-    git clone -b openssl-3.2.1 https://github.com/openssl/openssl openssl3
+    git clone --depth=1 -b openssl-3.2.1 https://github.com/openssl/openssl openssl3
     cd openssl3
 win32:
     perl Configure no-shared no-tests debug-VC-WIN32 /FS
@@ -1053,6 +1055,8 @@ mac:
 stage('libjxl', """
     git clone -b v0.12.0 --recursive --shallow-submodules https://github.com/libjxl/libjxl.git
     cd libjxl
+win:
+    powershell -Command "(Get-Content lib/jxl/base/common.h) -replace '#if JXL_COMPILER_MSVC', '#if defined(_MSC_VER)' | Set-Content lib/jxl/base/common.h"
 """ + setVar("cmake_defines", """
     -DBUILD_SHARED_LIBS=OFF
     -DBUILD_TESTING=OFF
@@ -1199,7 +1203,7 @@ stage('regex', """
 """)
 
 stage('ffmpeg', """
-    git clone -b n6.1.6 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+    git clone --depth=1 -b n6.1.6 https://github.com/FFmpeg/FFmpeg.git ffmpeg
     cd ffmpeg
 win:
 depends:patches/ffmpeg.patch
@@ -1545,15 +1549,18 @@ release:
 """)
 
     stage('qt_' + qt, """
-    git clone -b v$QT-lts-lgpl https://github.com/qt/qt5.git qt_$QT
-    cd qt_$QT
-    git submodule update --init --recursive --progress qtbase qtimageformats qtsvg
-depends:patches/qtbase_""" + qt + """/*.patch
 win:
+    SET QT=""" + qt + """
+    if not exist qt_""" + qt + """ git clone --depth=1 -b v""" + qt + """-lts-lgpl https://github.com/qt/qt5.git qt_""" + qt + """
+    cd qt_""" + qt + """
+    git submodule update --init --depth=1 --progress qtbase qtimageformats qtsvg
+depends:patches/qtbase_""" + qt + """/*.patch
     cd qtbase
+    git checkout -- .
+    git clean -fd
     setlocal enabledelayedexpansion
     for /r %%i in (..\\..\\patches\\qtbase_%QT%\\*) do (
-        git apply %%i -v
+        git apply "%%i" -v --ignore-space-change --ignore-whitespace
         if errorlevel 1 (
             echo ERROR: Applying patch %%~nxi failed!
             exit /b 1
@@ -1573,7 +1580,9 @@ win:
     SET OPENSSL_LIBS_DIR=%OPENSSL_DIR%\\out
     SET ZLIB_LIBS_DIR=%LIBS_DIR%\\zlib
     SET WEBP_DIR=%LIBS_DIR%\\libwebp
+    SET "OPENSSL_LIBS=%OPENSSL_LIBS_DIR%.dbg\\libssl.lib %OPENSSL_LIBS_DIR%.dbg\\libcrypto.lib Ws2_32.lib Gdi32.lib Advapi32.lib Crypt32.lib User32.lib"
     configure -prefix "%LIBS_DIR%\\Qt-%QT%" ^
+        -make-tool nmake ^
         %CONFIGURATIONS% ^
         -force-debug-info ^
         -opensource ^
@@ -1827,7 +1836,7 @@ release:
 """)
 
 stage('ada', """
-    git clone -b v3.2.4 https://github.com/ada-url/ada.git
+    git clone --depth=1 -b v3.2.4 https://github.com/ada-url/ada.git
     cd ada
 win:
     cmake -B out . ^

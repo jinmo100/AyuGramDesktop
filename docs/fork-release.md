@@ -26,7 +26,7 @@ App 需要此仓库的 Contents、Pull requests 和 Workflows 写权限。若分
 
 需要在原生 Windows 环境安装 Git、GitHub CLI、Python 3.10+，并已有 E 盘 MSVC、Qt 和配置好的构建目录。先用原生 Windows 的 `gh auth login` 登录；WSL 的登录与 Windows 的登录相互独立。GitHub CLI 的凭据保存在其配置/系统凭据存储，不在源码内。
 
-把发布源码推送到本 fork 的 `dev`，在 `E:\TBuild\tdesktop` 检出要发布的提交并匹配子模块。源码和子模块必须干净。现有未提交的 `Telegram/build/prepare/prepare.py` 修改必须先自行审查处理；发布命令不会提交、丢弃、重置或自动切换你的工作区。
+把发布源码推送到本 fork 的 `dev`，在 `E:\TBuild\tdesktop` 检出要发布的提交并匹配子模块。源码和子模块必须干净。Windows 源码副本中的临时修改也需要先审查处理；发布命令不会提交、丢弃、重置或自动切换你的工作区。
 
 从原生 PowerShell 执行：
 
