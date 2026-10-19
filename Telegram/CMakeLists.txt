@@ -252,6 +252,8 @@ set(ayugram_files
         ayu/data/entities.h
         ayu/data/ayu_database.cpp
         ayu/data/ayu_database.h
+        ayu/features/top_posts/top_posts_scanner.cpp
+        ayu/features/top_posts/top_posts_scanner.h
 
         info/profile/info_profile_music_button.cpp
         info/profile/info_profile_music_button.h
