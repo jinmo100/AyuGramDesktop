@@ -1559,13 +1559,7 @@ depends:patches/qtbase_""" + qt + """/*.patch
     git checkout -- .
     git clean -fd
     setlocal enabledelayedexpansion
-    for /r %%i in (..\\..\\patches\\qtbase_%QT%\\*) do (
-        git apply "%%i" -v --ignore-space-change --ignore-whitespace
-        if errorlevel 1 (
-            echo ERROR: Applying patch %%~nxi failed!
-            exit /b 1
-        )
-    )
+    for /r %%i in (..\\..\\patches\\qtbase_%QT%\\*) do (git apply "%%i" -v --ignore-space-change --ignore-whitespace || exit /b 1)
     cd ..
 
     SET CONFIGURATIONS=-debug
