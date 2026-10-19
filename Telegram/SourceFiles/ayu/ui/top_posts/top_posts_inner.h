@@ -6,11 +6,11 @@
 // Copyright @Radolyn, 2026
 #pragma once
 
-#include "rpl/event_stream.h"
 #include "ayu/data/ayu_database.h"
 #include "ayu/data/entities.h"
-#include "ui/rp_widget.h"
+#include "rpl/event_stream.h"
 #include "ui/text/text.h"
+#include "ui/rp_widget.h"
 
 class PeerData;
 
@@ -40,7 +40,6 @@ public:
 	void setSortOrder(AyuDatabase::TopPostsSortOrder sortOrder);
 	void setEmptyMessage(const QString &message);
 	void setVisibleTopBottom(int visibleTop, int visibleBottom);
-
 
 	[[nodiscard]] rpl::producer<MsgId> clicks() const {
 		return _clicks.events();

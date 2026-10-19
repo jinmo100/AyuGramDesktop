@@ -8,17 +8,18 @@
 
 #include "base/unixtime.h"
 #include "data/data_peer.h"
+#include "ui/painter.h"
+#include "ui/ui_utility.h"
+#include "window/window_session_controller.h"
+#include "lang_auto.h"
+#include <QtCore/QDateTime>
+#include <QtGui/QMouseEvent>
+#include <QtGui/QPainter>
+
 #include "styles/style_ayu_styles.h"
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_window.h"
-#include "ui/painter.h"
-#include "ui/ui_utility.h"
-#include "window/window_session_controller.h"
-
-#include <QtCore/QDateTime>
-#include <QtGui/QMouseEvent>
-#include <QtGui/QPainter>
 
 namespace TopPosts {
 namespace {
@@ -56,39 +57,45 @@ namespace {
 		return u"🔥"_q;
 	}
 	auto emoji = QString::fromUtf8(json.substr(start + 1, end - start - 1));
-	return emoji.isEmpty() ? u"🔥"_q : emoji;
+	if (emoji.isEmpty() || std::all_of(emoji.begin(), emoji.end(), [](QChar c) { return c.isDigit(); })) {
+		return u"🔥"_q;
+	}
+	return emoji;
 }
 
-[[nodiscard]] QString FormatMediaPlaceholder(TopPostMediaType type) {
+struct MediaTypeMetadata {
+	QString placeholder;
+	QString icon;
+};
+
+[[nodiscard]] MediaTypeMetadata GetMediaTypeMetadata(
+		TopPostMediaType type,
+		int groupedCount = 1) {
 	switch (type) {
 	case TopPostMediaType::Photo:
-		return u"[Photo]"_q;
+		return { u"[Photo]"_q, u"🖼"_q };
 	case TopPostMediaType::Video:
-		return u"[Video]"_q;
+		return { u"[Video]"_q, u"🎬"_q };
 	case TopPostMediaType::Document:
-		return u"[Document]"_q;
-	case TopPostMediaType::Grouped:
-		return u"[Album / Media Set]"_q;
+		return { u"[Document]"_q, u"📄"_q };
+	case TopPostMediaType::Grouped: {
+		const auto placeholder = (groupedCount > 1)
+			? u"[Album / Media Set (%1)]"_q.arg(groupedCount)
+			: u"[Album / Media Set]"_q;
+		return { placeholder, u"📚"_q };
+	}
 	case TopPostMediaType::None:
 	default:
-		return u"[Message]"_q;
+		return { u"[Message]"_q, u"💬"_q };
 	}
+}
+
+[[nodiscard]] QString FormatMediaPlaceholder(TopPostMediaType type, int groupedCount = 1) {
+	return GetMediaTypeMetadata(type, groupedCount).placeholder;
 }
 
 [[nodiscard]] QString MediaIconSymbol(TopPostMediaType type) {
-	switch (type) {
-	case TopPostMediaType::Photo:
-		return u"🖼"_q;
-	case TopPostMediaType::Video:
-		return u"🎬"_q;
-	case TopPostMediaType::Document:
-		return u"📄"_q;
-	case TopPostMediaType::Grouped:
-		return u"📚"_q;
-	case TopPostMediaType::None:
-	default:
-		return u"💬"_q;
-	}
+	return GetMediaTypeMetadata(type).icon;
 }
 
 } // namespace
@@ -231,7 +238,7 @@ void InnerWidget::paintEmpty(QPainter &p) {
 	p.setFont(st::normalFont);
 	p.setPen(st::windowSubTextFg);
 	const auto text = _emptyMessage.isEmpty()
-		? u"No top posts found.\nTry rescanning the channel."_q
+		? tr::ayu_TopPostsEmptyMatching(tr::now)
 		: _emptyMessage;
 	p.drawText(rect, Qt::AlignCenter | Qt::TextWordWrap, text);
 }
@@ -274,7 +281,7 @@ void InnerWidget::paintCard(
 
 	auto snippet = QString::fromUtf8(post.textSnippet);
 	if (snippet.trimmed().isEmpty()) {
-		snippet = FormatMediaPlaceholder(post.type());
+		snippet = FormatMediaPlaceholder(post.type(), post.groupedCount);
 	}
 	const auto elided = p.fontMetrics().elidedText(snippet, Qt::ElideRight, textMaxW);
 	p.setFont(st::semiboldFont);
@@ -315,6 +322,11 @@ void InnerWidget::paintCard(
 	if (post.viewsCount > 0) {
 		const auto viewsLabel = u"👁 "_q + FormatCount(post.viewsCount);
 		drawBadge(viewsLabel, st::msgServiceBg, st::windowSubTextFg);
+	}
+
+	if (post.isGrouped() && post.groupedCount > 1) {
+		const auto groupLabel = u"📦 %1"_q.arg(post.groupedCount);
+		drawBadge(groupLabel, st::msgServiceBg, st::msgServiceFg);
 	}
 }
 

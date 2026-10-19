@@ -79,6 +79,7 @@ void evictLruChannels(int maxChannels = 30);
 void clearChannelPosts(ID channelId);
 void clearAllChannelPosts();
 void removePost(ID channelId, int messageId);
+void removePosts(ID channelId, const std::vector<int> &messageIds);
 [[nodiscard]] rpl::producer<std::pair<ID, int>> channelPostRemoved();
 [[nodiscard]] rpl::producer<ID> channelPostsCleared();
 

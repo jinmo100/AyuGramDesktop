@@ -18,6 +18,10 @@ namespace TopPosts {
 [[nodiscard]] std::vector<ChannelTopPost> AggregateMediaGroups(
 	const std::vector<ChannelTopPost> &posts);
 
+[[nodiscard]] std::string MergeReactionsJson(
+	const std::string &first,
+	const std::string &second);
+
 class MediaGroupAggregator final {
 public:
 	[[nodiscard]] std::vector<ChannelTopPost> feed(
@@ -28,6 +32,7 @@ public:
 private:
 	std::vector<ChannelTopPost> _pendingGroup;
 	ID _currentGroupId = 0;
+
 };
 
 } // namespace TopPosts

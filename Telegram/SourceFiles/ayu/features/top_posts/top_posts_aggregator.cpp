@@ -23,11 +23,13 @@ ChannelTopPost CoalesceMediaGroup(const std::vector<ChannelTopPost> &group) {
 		if (post.groupedId != 0) {
 			post.setType(TopPostMediaType::Grouped);
 		}
+		post.groupedCount = 1;
 		return post;
 	}
 
 	auto result = group.front();
 	result.setType(TopPostMediaType::Grouped);
+	result.groupedCount = static_cast<int>(group.size());
 
 	auto totalReactions = 0;
 	auto maxComments = 0;
@@ -83,6 +85,31 @@ ChannelTopPost CoalesceMediaGroup(const std::vector<ChannelTopPost> &group) {
 	).toStdString();
 
 	return result;
+}
+
+std::string MergeReactionsJson(
+		const std::string &first,
+		const std::string &second) {
+	if (first.empty() || first == "{}") {
+		return second;
+	} else if (second.empty() || second == "{}") {
+		return first;
+	}
+	auto merged = QJsonObject();
+	const auto parseAndMerge = [&](const std::string &json) {
+		const auto doc = QJsonDocument::fromJson(
+			QByteArray::fromRawData(json.data(), json.size()));
+		const auto obj = doc.object();
+		for (auto it = obj.begin(); it != obj.end(); ++it) {
+			const auto key = it.key();
+			merged[key] = std::max(merged.value(key).toInt(), it.value().toInt());
+		}
+	};
+	parseAndMerge(first);
+	parseAndMerge(second);
+	return QString::fromUtf8(
+		QJsonDocument(merged).toJson(QJsonDocument::Compact)
+	).toStdString();
 }
 
 std::vector<ChannelTopPost> AggregateMediaGroups(

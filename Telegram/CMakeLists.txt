@@ -254,16 +254,16 @@ set(ayugram_files
         ayu/data/entities.h
         ayu/data/ayu_database.cpp
         ayu/data/ayu_database.h
-        ayu/features/top_posts/top_posts_scanner.cpp
-        ayu/features/top_posts/top_posts_scanner.h
         ayu/features/top_posts/top_posts_aggregator.cpp
         ayu/features/top_posts/top_posts_aggregator.h
+        ayu/features/top_posts/top_posts_scanner.cpp
+        ayu/features/top_posts/top_posts_scanner.h
         ayu/features/top_posts/top_posts_sync.cpp
         ayu/features/top_posts/top_posts_sync.h
-        ayu/ui/top_posts/top_posts_section.cpp
-        ayu/ui/top_posts/top_posts_section.h
         ayu/ui/top_posts/top_posts_inner.cpp
         ayu/ui/top_posts/top_posts_inner.h
+        ayu/ui/top_posts/top_posts_section.cpp
+        ayu/ui/top_posts/top_posts_section.h
 
         info/profile/info_profile_music_button.cpp
         info/profile/info_profile_music_button.h

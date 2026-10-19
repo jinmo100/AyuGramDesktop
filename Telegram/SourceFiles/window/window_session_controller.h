@@ -284,12 +284,6 @@ public:
 		const SectionShow &params = SectionShow::Way::ClearStack,
 		MsgId msgId = ShowAtUnreadMsgId);
 
-	void historyView_showAt(
-		not_null<PeerData*> peer,
-		MsgId msgId) {
-		showPeerHistory(peer, SectionShow::Way::Forward, msgId);
-	}
-
 	void clearSectionStack(
 			const SectionShow &params = SectionShow::Way::ClearStack) {
 		showPeerHistory(

@@ -123,7 +123,7 @@ Scanner::Scanner(
 	int scanWindow,
 	TopPostsFilter filter)
 : _peer(peer)
-, _channelId(getDialogIdFromPeer(peer))
+, _channelId(peer->id.bare)
 , _scanWindow(std::clamp(scanWindow, 1, kMaxScanWindow))
 , _filter(filter)
 , _api(&peer->session().mtp()) {
@@ -345,9 +345,8 @@ void Scanner::handleResponse(const MTPmessages_Messages &result) {
 				coalesced.end());
 
 			if (_autoSave) {
-				crl::async([posts = coalesced, channelId = _channelId] {
+				crl::async([posts = coalesced] {
 					AyuDatabase::saveChannelPosts(posts);
-					AyuDatabase::truncateChannelPosts(channelId, 300);
 				});
 			}
 
@@ -410,9 +409,6 @@ void Scanner::finish(ScanState finalState, const QString &error) {
 	if (_requestId) {
 		_api.request(base::take(_requestId)).cancel();
 	}
-	_progress.state = finalState;
-	_progress.errorMessage = error;
-	_progress.floodWaitSeconds = 0;
 
 	if (finalState == ScanState::Completed) {
 		const auto flushed = _aggregator.flush();
@@ -421,18 +417,39 @@ void Scanner::finish(ScanState finalState, const QString &error) {
 				_allParsedPosts.end(),
 				flushed.begin(),
 				flushed.end());
-
-			if (_autoSave) {
-				crl::async([posts = flushed, channelId = _channelId] {
-					AyuDatabase::saveChannelPosts(posts);
-					AyuDatabase::truncateChannelPosts(channelId, 300);
-				});
-			}
-
 			_batchParsedStream.fire_copy(flushed);
 		}
+		if (_autoSave) {
+			crl::async([posts = flushed, channelId = _channelId, weak = base::make_weak(this), finalState, error] {
+				if (!posts.empty()) {
+					AyuDatabase::saveChannelPosts(posts);
+				}
+				AyuDatabase::truncateChannelPosts(channelId, 300);
+				crl::on_main(weak, [=] {
+					_progress.state = finalState;
+					_progress.errorMessage = error;
+					_progress.floodWaitSeconds = 0;
+					_progressStream.fire_copy(_progress);
+				});
+			});
+			return;
+		}
+	} else if (finalState == ScanState::Cancelled && _autoSave) {
+		crl::async([channelId = _channelId, weak = base::make_weak(this), finalState, error] {
+			AyuDatabase::truncateChannelPosts(channelId, 300);
+			crl::on_main(weak, [=] {
+				_progress.state = finalState;
+				_progress.errorMessage = error;
+				_progress.floodWaitSeconds = 0;
+				_progressStream.fire_copy(_progress);
+			});
+		});
+		return;
 	}
 
+	_progress.state = finalState;
+	_progress.errorMessage = error;
+	_progress.floodWaitSeconds = 0;
 	_progressStream.fire_copy(_progress);
 }
 

@@ -149,22 +149,26 @@ class ChannelTopPost
 public:
 	ID id = 0;
 	ID channelId = 0;
+	ID groupedId = 0;
+	std::string textSnippet;
+	std::string reactionsJson;
 	int messageId = 0;
 	int date = 0;
 	int reactionsCount = 0;
 	int commentsCount = 0;
 	int viewsCount = 0;
-	std::string textSnippet;
 	int mediaType = 0;
-	std::string reactionsJson;
 	int scanTime = 0;
-	ID groupedId = 0;
+	int groupedCount = 1;
 
 	[[nodiscard]] TopPostMediaType type() const {
 		return static_cast<TopPostMediaType>(mediaType);
 	}
 	void setType(TopPostMediaType t) {
 		mediaType = static_cast<int>(t);
+	}
+	[[nodiscard]] bool isGrouped() const {
+		return type() == TopPostMediaType::Grouped || groupedId != 0;
 	}
 
 	bool operator==(const ChannelTopPost &other) const {
@@ -178,7 +182,8 @@ public:
 			&& mediaType == other.mediaType
 			&& reactionsJson == other.reactionsJson
 			&& scanTime == other.scanTime
-			&& groupedId == other.groupedId;
+			&& groupedId == other.groupedId
+			&& groupedCount == other.groupedCount;
 	}
 
 };

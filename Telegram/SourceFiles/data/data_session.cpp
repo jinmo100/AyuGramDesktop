@@ -3396,9 +3396,12 @@ void Session::processMessagesDeleted(
 		const QVector<MTPint> &data) {
 	if (peerIsChannel(peerId)) {
 		const auto channelId = peerToChannel(peerId).bare;
+		auto ids = std::vector<int>();
+		ids.reserve(data.size());
 		for (const auto &messageId : data) {
-			AyuDatabase::removePost(channelId, messageId.v);
+			ids.push_back(messageId.v);
 		}
+		AyuDatabase::removePosts(channelId, ids);
 	}
 	const auto list = messagesList(peerId);
 	const auto affected = historyLoaded(peerId);

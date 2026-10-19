@@ -11,6 +11,15 @@
 #include "data/data_peer.h"
 #include "data/data_session.h"
 #include "profile/profile_back_button.h"
+#include "ui/widgets/buttons.h"
+#include "ui/widgets/popup_menu.h"
+#include "ui/widgets/scroll_area.h"
+#include "ui/widgets/shadow.h"
+#include "ui/painter.h"
+#include "ui/ui_utility.h"
+#include "window/window_session_controller.h"
+#include <QtGui/QPainter>
+
 #include "styles/style_ayu_styles.h"
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
@@ -18,16 +27,6 @@
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 #include "styles/style_window.h"
-#include "ui/painter.h"
-#include "ui/ui_utility.h"
-#include "ui/widgets/buttons.h"
-#include "ui/widgets/popup_menu.h"
-#include "ui/widgets/scroll_area.h"
-#include "ui/widgets/shadow.h"
-#include "window/window_session_controller.h"
-
-#include <QtGui/QPainter>
-
 namespace TopPosts {
 namespace {
 
@@ -47,30 +46,14 @@ public:
 		not_null<Window::SessionController*> controller,
 		not_null<PeerData*> peer);
 
-	[[nodiscard]] rpl::producer<> backRequests() const {
-		return _backRequests.events();
-	}
-	[[nodiscard]] rpl::producer<> refreshRequests() const {
-		return _refreshRequests.events();
-	}
-	[[nodiscard]] rpl::producer<> rescanRequests() const {
-		return _rescanRequests.events();
-	}
-	[[nodiscard]] rpl::producer<> clearCacheRequests() const {
-		return _clearCacheRequests.events();
-	}
-	[[nodiscard]] rpl::producer<> cancelRequests() const {
-		return _cancelRequests.events();
-	}
-	[[nodiscard]] rpl::producer<AyuDatabase::TopPostsSortOrder> sortChanged() const {
-		return _sortChanged.events();
-	}
-	[[nodiscard]] rpl::producer<AyuDatabase::TopPostsFilter> filterChanged() const {
-		return _filterChanged.events();
-	}
-	[[nodiscard]] rpl::producer<int> heightChanged() const {
-		return _heightChanged.events();
-	}
+	[[nodiscard]] rpl::producer<> backRequests() const;
+	[[nodiscard]] rpl::producer<> refreshRequests() const;
+	[[nodiscard]] rpl::producer<int> rescanRequests() const;
+	[[nodiscard]] rpl::producer<> clearCacheRequests() const;
+	[[nodiscard]] rpl::producer<> cancelRequests() const;
+	[[nodiscard]] rpl::producer<AyuDatabase::TopPostsSortOrder> sortChanged() const;
+	[[nodiscard]] rpl::producer<AyuDatabase::TopPostsFilter> filterChanged() const;
+	[[nodiscard]] rpl::producer<int> heightChanged() const;
 
 	void showBanner(const QString &text, bool canCancel);
 	void hideBanner();
@@ -112,7 +95,7 @@ private:
 
 	rpl::event_stream<> _backRequests;
 	rpl::event_stream<> _refreshRequests;
-	rpl::event_stream<> _rescanRequests;
+	rpl::event_stream<int> _rescanRequests;
 	rpl::event_stream<> _clearCacheRequests;
 	rpl::event_stream<> _cancelRequests;
 	rpl::event_stream<AyuDatabase::TopPostsSortOrder> _sortChanged;
@@ -120,6 +103,38 @@ private:
 	rpl::event_stream<int> _heightChanged;
 
 };
+
+rpl::producer<> FixedBar::backRequests() const {
+	return _backRequests.events();
+}
+
+rpl::producer<> FixedBar::refreshRequests() const {
+	return _refreshRequests.events();
+}
+
+rpl::producer<int> FixedBar::rescanRequests() const {
+	return _rescanRequests.events();
+}
+
+rpl::producer<> FixedBar::clearCacheRequests() const {
+	return _clearCacheRequests.events();
+}
+
+rpl::producer<> FixedBar::cancelRequests() const {
+	return _cancelRequests.events();
+}
+
+rpl::producer<AyuDatabase::TopPostsSortOrder> FixedBar::sortChanged() const {
+	return _sortChanged.events();
+}
+
+rpl::producer<AyuDatabase::TopPostsFilter> FixedBar::filterChanged() const {
+	return _filterChanged.events();
+}
+
+rpl::producer<int> FixedBar::heightChanged() const {
+	return _heightChanged.events();
+}
 
 FixedBar::FixedBar(
 	QWidget *parent,
@@ -131,14 +146,14 @@ FixedBar::FixedBar(
 , _hasDiscussion(HasDiscussionGroup(peer))
 , _backButton(this)
 , _menuToggle(this, st::topBarMenuToggle)
-, _reactionsSort(this, u"🔥 Reactions"_q, st::defaultFlatButton)
-, _commentsSort(this, u"💬 Comments"_q, st::defaultFlatButton)
-, _viewsSort(this, u"👁 Views"_q, st::defaultFlatButton)
-, _allFilter(this, u"All"_q, st::defaultFlatButton)
-, _docsFilter(this, u"Docs"_q, st::defaultFlatButton)
-, _mediaFilter(this, u"Media"_q, st::defaultFlatButton)
+, _reactionsSort(this, u"🔥 "_q + tr::ayu_TopPostsSortReactions(tr::now), st::defaultFlatButton)
+, _commentsSort(this, u"💬 "_q + tr::ayu_TopPostsSortComments(tr::now), st::defaultFlatButton)
+, _viewsSort(this, u"👁 "_q + tr::ayu_TopPostsSortViews(tr::now), st::defaultFlatButton)
+, _allFilter(this, tr::ayu_TopPostsFilterAll(tr::now), st::defaultFlatButton)
+, _docsFilter(this, tr::ayu_TopPostsFilterDocs(tr::now), st::defaultFlatButton)
+, _mediaFilter(this, tr::ayu_TopPostsFilterMedia(tr::now), st::defaultFlatButton)
 , _banner(this)
-, _cancelButton(_banner.data(), u"Cancel"_q, st::defaultFlatButton) {
+, _cancelButton(_banner.data(), tr::lng_cancel(tr::now), st::defaultFlatButton)
 	setAttribute(Qt::WA_OpaquePaintEvent);
 
 	_backButton->moveToLeft(0, 0);
@@ -175,7 +190,7 @@ void FixedBar::setupSortButtons() {
 
 	if (!_hasDiscussion) {
 		_commentsSort->setEnabled(false);
-		_commentsSort->setToolTip(u"This channel has no discussion group"_q);
+		_commentsSort->setToolTip(tr::ayu_TopPostsNoDiscussionTooltip(tr::now));
 	}
 
 	_viewsSort->setClickedCallback([=] {
@@ -261,13 +276,22 @@ void FixedBar::showActionMenu() {
 	_actionMenu = base::make_unique_q<Ui::PopupMenu>(
 		_menuToggle.data(),
 		st::defaultPopupMenu);
-	_actionMenu->addAction(u"Incremental Refresh"_q, [=] {
+	_actionMenu->addAction(tr::ayu_TopPostsRefresh(tr::now), [=] {
 		_refreshRequests.fire({});
 	});
-	_actionMenu->addAction(u"Rescan Channel"_q, [=] {
-		_rescanRequests.fire({});
+	_actionMenu->addAction(tr::ayu_TopPostsRescan500(tr::now), [=] {
+		_rescanRequests.fire(500);
 	});
-	_actionMenu->addAction(u"Clear Channel Cache"_q, [=] {
+	_actionMenu->addAction(tr::ayu_TopPostsRescan1000(tr::now), [=] {
+		_rescanRequests.fire(1000);
+	});
+	_actionMenu->addAction(tr::ayu_TopPostsRescan2000(tr::now), [=] {
+		_rescanRequests.fire(2000);
+	});
+	_actionMenu->addAction(tr::ayu_TopPostsRescan5000(tr::now), [=] {
+		_rescanRequests.fire(5000);
+	});
+	_actionMenu->addAction(tr::ayu_TopPostsClearCache(tr::now), [=] {
 		_clearCacheRequests.fire({});
 	});
 	_actionMenu->setForcedOrigin(Ui::PanelAnimation::Origin::TopRight);
@@ -311,7 +335,7 @@ void FixedBar::paintEvent(QPaintEvent *e) {
 
 	p.setFont(st::topBarTitleFont);
 	p.setPen(st::topBarTitleFg);
-	const auto title = u"Top Posts"_q;
+	const auto title = tr::ayu_TopPostsTitle(tr::now);
 	const auto titleLeft = _backButton->width() + st::topPostsTabMargin;
 	const auto titleY = (st::topBarHeight + p.fontMetrics().ascent()) / 2 - 2;
 	p.drawText(titleLeft, titleY, title);
@@ -351,8 +375,8 @@ void SectionWidget::setupControls() {
 	}, lifetime());
 
 	_fixedBar->rescanRequests(
-	) | rpl::on_next([=] {
-		startScan();
+	) | rpl::on_next([=](int scanWindow) {
+		startScan(scanWindow);
 	}, lifetime());
 
 	_fixedBar->clearCacheRequests(
@@ -396,7 +420,7 @@ void SectionWidget::setupControls() {
 
 	_inner->clicks(
 	) | rpl::on_next([=](MsgId msgId) {
-		controller()->historyView_showAt(_peer, msgId);
+		controller()->showPeerHistory(_peer, Window::SectionShow::Way::Forward, msgId);
 	}, lifetime());
 
 	AyuDatabase::channelPostRemoved(
@@ -404,13 +428,13 @@ void SectionWidget::setupControls() {
 		return pair.first == _peer->id.bare;
 	}) | rpl::on_next([=](const std::pair<AyuDatabase::ID, int> &pair) {
 		loadPosts();
+	}, lifetime());
 
 	AyuDatabase::channelPostsCleared(
 	) | rpl::filter([=](AyuDatabase::ID channelId) {
 		return channelId == 0 || channelId == _peer->id.bare;
 	}) | rpl::on_next([=] {
 		loadPosts();
-	}, lifetime());
 	}, lifetime());
 }
 
@@ -524,9 +548,10 @@ void SectionWidget::loadPosts() {
 		_sortOrder,
 		_filter);
 
-	if (posts.empty() && !AyuDatabase::hasChannelTopPosts(channelId)) {
+	if (posts.empty() && !AyuDatabase::hasChannelTopPosts(channelId) && !_initialScanAttempted) {
+		_initialScanAttempted = true;
 		if (_inner) {
-			_inner->setEmptyMessage(u"No top posts cached yet.\nStarting automatic scan..."_q);
+			_inner->setEmptyMessage(tr::ayu_TopPostsEmptyInitial(tr::now));
 			_inner->setPosts({});
 		}
 		startScan();
@@ -535,13 +560,13 @@ void SectionWidget::loadPosts() {
 			if (posts.empty()) {
 				switch (_filter) {
 				case AyuDatabase::TopPostsFilter::Documents:
-					_inner->setEmptyMessage(u"No document files found in top posts."_q);
+					_inner->setEmptyMessage(tr::ayu_TopPostsEmptyDocs(tr::now));
 					break;
 				case AyuDatabase::TopPostsFilter::Media:
-					_inner->setEmptyMessage(u"No photos or videos found in top posts."_q);
+					_inner->setEmptyMessage(tr::ayu_TopPostsEmptyMedia(tr::now));
 					break;
 				default:
-					_inner->setEmptyMessage(u"No top posts found matching criteria."_q);
+					_inner->setEmptyMessage(tr::ayu_TopPostsEmptyMatching(tr::now));
 					break;
 				}
 			}
@@ -550,12 +575,12 @@ void SectionWidget::loadPosts() {
 	}
 }
 
-void SectionWidget::startScan() {
+void SectionWidget::startScan(int scanWindow) {
 	if (_scanner) {
 		return;
 	}
-	_fixedBar->showBanner(u"Scanning channel messages..."_q, true);
-	_scanner = std::make_unique<Scanner>(_peer, kDefaultScanWindow, _filter);
+	_fixedBar->showBanner(tr::ayu_TopPostsScanning(tr::now), true);
+	_scanner = std::make_unique<Scanner>(_peer, scanWindow, _filter);
 	_scanner->progress(
 	) | rpl::on_next([=](const ScanProgress &p) {
 		handleScanProgress(p);
@@ -576,15 +601,20 @@ void SectionWidget::cancelScan() {
 void SectionWidget::handleScanProgress(const ScanProgress &p) {
 	switch (p.state) {
 	case ScanState::Scanning: {
-		const auto text = u"Scanning %1/%2 messages..."_q
-			.arg(p.scannedCount)
-			.arg(p.targetCount);
+		const auto text = tr::ayu_TopPostsScanningProgress(
+			tr::now,
+			lt_count,
+			p.scannedCount,
+			lt_total,
+			p.targetCount);
 		_fixedBar->showBanner(text, true);
 		break;
 	}
 	case ScanState::PausedFloodWait: {
-		const auto text = u"Rate limited. Resuming in %1s..."_q
-			.arg(p.floodWaitSeconds);
+		const auto text = tr::ayu_TopPostsRateLimited(
+			tr::now,
+			lt_seconds,
+			p.floodWaitSeconds);
 		_fixedBar->showBanner(text, true);
 		break;
 	}
@@ -604,8 +634,8 @@ void SectionWidget::handleScanProgress(const ScanProgress &p) {
 	}
 	case ScanState::Failed: {
 		const auto text = p.errorMessage.isEmpty()
-			? u"Scan failed."_q
-			: u"Scan error: %1"_q.arg(p.errorMessage);
+			? tr::ayu_TopPostsScanFailed(tr::now)
+			: tr::ayu_TopPostsScanError(tr::now, lt_error, p.errorMessage);
 		_fixedBar->showBanner(text, false);
 		_scanner = nullptr;
 		_scannerLifetime.destroy();
@@ -620,7 +650,7 @@ void SectionWidget::startSync() {
 	if (_syncController) {
 		return;
 	}
-	_fixedBar->showBanner(u"Syncing updates..."_q, true);
+	_fixedBar->showBanner(tr::ayu_TopPostsSyncing(tr::now), true);
 	_syncController = std::make_unique<IncrementalSyncController>(_peer, _filter);
 	_syncController->progress(
 	) | rpl::on_next([=](const SyncProgress &p) {
@@ -642,21 +672,28 @@ void SectionWidget::cancelSync() {
 void SectionWidget::handleSyncProgress(const SyncProgress &p) {
 	switch (p.state) {
 	case SyncState::SyncingDeltas: {
-		const auto text = u"Syncing channel updates (%1 fetched)..."_q
-			.arg(p.deltasFetched);
+		const auto text = tr::ayu_TopPostsSyncingDeltas(
+			tr::now,
+			lt_count,
+			p.deltasFetched);
 		_fixedBar->showBanner(text, true);
 		break;
 	}
 	case SyncState::RefreshingCached: {
-		const auto text = u"Refreshing top posts (%1/%2)..."_q
-			.arg(p.refreshedCount)
-			.arg(p.totalToRefresh);
+		const auto text = tr::ayu_TopPostsSyncingProgress(
+			tr::now,
+			lt_count,
+			p.refreshedCount,
+			lt_total,
+			p.totalToRefresh);
 		_fixedBar->showBanner(text, true);
 		break;
 	}
 	case SyncState::PausedFloodWait: {
-		const auto text = u"Rate limited. Resuming in %1s..."_q
-			.arg(p.floodWaitSeconds);
+		const auto text = tr::ayu_TopPostsRateLimited(
+			tr::now,
+			lt_seconds,
+			p.floodWaitSeconds);
 		_fixedBar->showBanner(text, true);
 		break;
 	}
@@ -676,8 +713,8 @@ void SectionWidget::handleSyncProgress(const SyncProgress &p) {
 	}
 	case SyncState::Failed: {
 		const auto text = p.errorMessage.isEmpty()
-			? u"Sync failed."_q
-			: u"Sync error: %1"_q.arg(p.errorMessage);
+			? tr::ayu_TopPostsSyncFailed(tr::now)
+			: tr::ayu_TopPostsSyncError(tr::now, lt_error, p.errorMessage);
 		_fixedBar->showBanner(text, false);
 		_syncController = nullptr;
 		_syncLifetime.destroy();
@@ -691,7 +728,7 @@ void SectionWidget::handleSyncProgress(const SyncProgress &p) {
 void SectionWidget::clearCache() {
 	AyuDatabase::clearChannelPosts(_peer->id.bare);
 	if (_inner) {
-		_inner->setEmptyMessage(u"Channel cache cleared.\nClick Rescan to analyze again."_q);
+		_inner->setEmptyMessage(tr::ayu_TopPostsCacheCleared(tr::now));
 		_inner->setPosts({});
 	}
 }

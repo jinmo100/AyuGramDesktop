@@ -9,8 +9,8 @@
 #include "ayu/data/entities.h"
 #include "ayu/libs/sqlite/sqlite_orm.h"
 #include "base/unixtime.h"
-#include "rpl/event_stream.h"
 #include "crl/crl_on_main.h"
+#include "rpl/event_stream.h"
 
 #include <mutex>
 
@@ -188,7 +188,8 @@ auto storage = make_storage(
 		make_column("mediaType", &ChannelTopPost::mediaType),
 		make_column("reactionsJson", &ChannelTopPost::reactionsJson),
 		make_column("scanTime", &ChannelTopPost::scanTime),
-		make_column("groupedId", &ChannelTopPost::groupedId)
+		make_column("groupedId", &ChannelTopPost::groupedId),
+		make_column("groupedCount", &ChannelTopPost::groupedCount)
 	)
 );
 
@@ -873,21 +874,39 @@ void clearAllChannelPosts() {
 	}
 }
 
-void removePost(ID channelId, int messageId) {
+void removePosts(ID channelId, const std::vector<int> &messageIds) {
+	if (messageIds.empty()) {
+		return;
+	}
 	std::lock_guard lock(databaseMutex);
 	try {
+		const auto count = storage.count<ChannelTopPost>(
+			where(
+				column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId
+				&& in(&ChannelTopPost::messageId, messageIds)
+			)
+		);
+		if (count == 0) {
+			return;
+		}
 		storage.remove_all<ChannelTopPost>(
 			where(
 				column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId
-				&& column<ChannelTopPost>(&ChannelTopPost::messageId) == messageId
+				&& in(&ChannelTopPost::messageId, messageIds)
 			)
 		);
 		crl::on_main([=] {
-			channelPostRemovedStream.fire({ channelId, messageId });
+			for (const auto messageId : messageIds) {
+				channelPostRemovedStream.fire({ channelId, messageId });
+			}
 		});
 	} catch (const std::exception &ex) {
-		LOG(("Failed to remove channel top post: %1").arg(ex.what()));
+		LOG(("Failed to remove channel top posts: %1").arg(ex.what()));
 	}
+}
+
+void removePost(ID channelId, int messageId) {
+	removePosts(channelId, { messageId });
 }
 
 std::vector<ChannelTopPost> getChannelTopPosts(

@@ -6,10 +6,10 @@
 // Copyright @Radolyn, 2026
 #include "ayu/ui/settings/settings_storage.h"
 
-#include "lang_auto.h"
 #include "ayu/data/ayu_database.h"
 #include "ayu/ui/settings/ayu_builder.h"
 #include "ayu/ui/settings/settings_main.h"
+#include "lang_auto.h"
 #include "settings/settings_builder.h"
 #include "settings/settings_common.h"
 #include "ui/boxes/confirm_box.h"

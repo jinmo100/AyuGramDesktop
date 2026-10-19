@@ -9,6 +9,7 @@
 #include "ayu/data/ayu_database.h"
 #include "ayu/data/entities.h"
 #include "ayu/features/top_posts/top_posts_aggregator.h"
+#include "base/flat_map.h"
 #include "base/timer.h"
 #include "base/weak_ptr.h"
 #include "mtproto/sender.h"
@@ -93,6 +94,8 @@ private:
 	rpl::event_stream<SyncProgress> _progressStream;
 	rpl::event_stream<std::vector<ChannelTopPost>> _updatedPostsStream;
 	std::vector<ChannelTopPost> _allUpdatedPosts;
+	base::flat_map<int, ChannelTopPost> _cachedPostsMap;
+
 };
 
 } // namespace TopPosts

@@ -81,3 +81,4 @@ Telegram/SourceFiles/_other/packer_private.h
 # Node / Tooling
 node_modules/
 E:/
+.codegraph/

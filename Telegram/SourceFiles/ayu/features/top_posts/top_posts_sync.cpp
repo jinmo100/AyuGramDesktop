@@ -24,7 +24,7 @@ IncrementalSyncController::IncrementalSyncController(
 	not_null<PeerData*> peer,
 	TopPostsFilter filter)
 : _peer(peer)
-, _channelId(getDialogIdFromPeer(peer))
+, _channelId(peer->id.bare)
 , _filter(filter)
 , _api(&peer->session().mtp()) {
 	_throttleTimer.setCallback([=] {
@@ -52,6 +52,15 @@ void IncrementalSyncController::start() {
 
 	_highestCachedMessageId = AyuDatabase::getChannelTopPostsMaxMessageId(_channelId);
 	const auto cachedIds = AyuDatabase::getChannelTopPostMessageIds(_channelId);
+	_cachedPostsMap.clear();
+	const auto cachedPosts = AyuDatabase::getChannelTopPosts(
+		_channelId,
+		TopPostsSortOrder::Reactions,
+		TopPostsFilter::All,
+		300);
+	for (const auto &post : cachedPosts) {
+		_cachedPostsMap.emplace(post.messageId, post);
+	}
 
 	_cachedChunks.clear();
 	for (size_t i = 0; i < cachedIds.size(); i += kBatchSize) {
@@ -311,12 +320,31 @@ void IncrementalSyncController::handleRefreshResponse(
 	if (messages) {
 		const auto scanTime = base::unixtime::now();
 		for (const auto &msg : *messages) {
+			if (msg.type() == mtpc_messageEmpty) {
+				const auto emptyId = msg.c_messageEmpty().vid().v;
+				AyuDatabase::removePost(_channelId, emptyId);
+				++_progress.refreshedCount;
+				continue;
+			}
 			const auto item = _peer->owner().addNewMessage(
 				msg,
 				MessageFlags(),
 				NewMessageType::Existing);
 			if (item && !item->isService()) {
-				_refreshedPosts.push_back(ExtractPostMetrics(item, _channelId, scanTime));
+				auto updated = ExtractPostMetrics(item, _channelId, scanTime);
+				if (const auto it = _cachedPostsMap.find(updated.messageId); it != _cachedPostsMap.end()) {
+					const auto &cached = it->second;
+					if (cached.isGrouped()) {
+						updated.setType(TopPostMediaType::Grouped);
+						updated.groupedId = cached.groupedId;
+						updated.groupedCount = std::max(1, cached.groupedCount);
+						updated.reactionsCount = std::max(cached.reactionsCount, updated.reactionsCount);
+						updated.commentsCount = std::max(cached.commentsCount, updated.commentsCount);
+						updated.viewsCount = std::max(cached.viewsCount, updated.viewsCount);
+						updated.reactionsJson = MergeReactionsJson(cached.reactionsJson, updated.reactionsJson);
+					}
+				}
+				_refreshedPosts.push_back(std::move(updated));
 			}
 			++_progress.refreshedCount;
 		}
@@ -382,10 +410,6 @@ void IncrementalSyncController::finish(
 		_api.request(base::take(_requestId)).cancel();
 	}
 
-	_progress.state = finalState;
-	_progress.errorMessage = error;
-	_progress.floodWaitSeconds = 0;
-
 	if (finalState == SyncState::Completed) {
 		_allUpdatedPosts.clear();
 		_allUpdatedPosts.reserve(_deltaPosts.size() + _refreshedPosts.size());
@@ -399,14 +423,24 @@ void IncrementalSyncController::finish(
 			_refreshedPosts.end());
 
 		if (!_allUpdatedPosts.empty()) {
-			crl::async([posts = _allUpdatedPosts, channelId = _channelId] {
+			_updatedPostsStream.fire_copy(_allUpdatedPosts);
+			crl::async([posts = _allUpdatedPosts, channelId = _channelId, weak = base::make_weak(this), finalState, error] {
 				AyuDatabase::saveChannelPosts(posts);
 				AyuDatabase::truncateChannelPosts(channelId, 300);
+				crl::on_main(weak, [=] {
+					_progress.state = finalState;
+					_progress.errorMessage = error;
+					_progress.floodWaitSeconds = 0;
+					_progressStream.fire_copy(_progress);
+				});
 			});
-			_updatedPostsStream.fire_copy(_allUpdatedPosts);
+			return;
 		}
 	}
 
+	_progress.state = finalState;
+	_progress.errorMessage = error;
+	_progress.floodWaitSeconds = 0;
 	_progressStream.fire_copy(_progress);
 }
 

@@ -10,8 +10,8 @@
 #include "ayu/data/entities.h"
 #include "ayu/features/top_posts/top_posts_scanner.h"
 #include "ayu/features/top_posts/top_posts_sync.h"
-#include "window/section_widget.h"
 #include "window/section_memento.h"
+#include "window/section_widget.h"
 
 namespace Ui {
 class ScrollArea;
@@ -72,7 +72,7 @@ protected:
 private:
 	void setupControls();
 	void loadPosts();
-	void startScan();
+	void startScan(int scanWindow = kDefaultScanWindow);
 	void cancelScan();
 	void startSync();
 	void cancelSync();
@@ -85,6 +85,7 @@ private:
 	const not_null<PeerData*> _peer;
 	AyuDatabase::TopPostsSortOrder _sortOrder = AyuDatabase::TopPostsSortOrder::Reactions;
 	AyuDatabase::TopPostsFilter _filter = AyuDatabase::TopPostsFilter::All;
+	bool _initialScanAttempted = false;
 
 	object_ptr<FixedBar> _fixedBar;
 	object_ptr<Ui::PlainShadow> _fixedBarShadow;
@@ -133,8 +134,8 @@ public:
 private:
 	const not_null<PeerData*> _peer;
 	int _scrollTop = 0;
-	AyuDatabase::TopPostsSortOrder _sortOrder;
-	AyuDatabase::TopPostsFilter _filter;
+	AyuDatabase::TopPostsSortOrder _sortOrder = AyuDatabase::TopPostsSortOrder::Reactions;
+	AyuDatabase::TopPostsFilter _filter = AyuDatabase::TopPostsFilter::All;
 
 };
 
