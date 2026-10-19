@@ -18,6 +18,7 @@
 #include "ayu/features/forward/ayu_forward_rich.h"
 #include "ayu/ui/context_menu/menu_item_subtext.h"
 #include "ayu/ui/message_history/history_section.h"
+#include "ayu/ui/top_posts/top_posts_section.h"
 #include "ayu/ui/settings/filters/edit_filter.h"
 #include "ayu/ui/settings/filters/settings_filters_list.h"
 #include "ayu/utils/qt_key_modifiers_extended.h"
@@ -427,6 +428,22 @@ void AddOpenChannelAction(PeerData *peerData,
 			sessionController->showPeerHistory(chat, Window::SectionShow::Way::Forward);
 		},
 		&st::menuIconChannel);
+}
+
+void AddTopPostsAction(PeerData *peerData,
+					   not_null<Window::SessionController*> sessionController,
+					   const Window::PeerMenuCallback &addCallback) {
+	const auto channel = peerData ? peerData->asChannel() : nullptr;
+	if (!channel || channel->isMegagroup()) {
+		return;
+	}
+
+	addCallback(
+		tr::ayu_TopPostsMenuText(tr::now),
+		[=] {
+			sessionController->showSection(std::make_shared<TopPosts::SectionMemento>(channel));
+		},
+		&st::menuIconGroupReactions);
 }
 
 void AddShadowBanAction(PeerData *peerData,

@@ -6,6 +6,7 @@
 // Copyright @Radolyn, 2026
 #pragma once
 
+#include "rpl/event_stream.h"
 #include "ayu/data/ayu_database.h"
 #include "ayu/data/entities.h"
 #include "ui/rp_widget.h"
@@ -40,6 +41,10 @@ public:
 	void setEmptyMessage(const QString &message);
 	void setVisibleTopBottom(int visibleTop, int visibleBottom);
 
+
+	[[nodiscard]] rpl::producer<MsgId> clicks() const {
+		return _clicks.events();
+	}
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void mouseMoveEvent(QMouseEvent *e) override;
@@ -69,6 +74,7 @@ private:
 	int _visibleTop = 0;
 	int _visibleBottom = 0;
 	QString _emptyMessage;
+	rpl::event_stream<MsgId> _clicks;
 
 };
 

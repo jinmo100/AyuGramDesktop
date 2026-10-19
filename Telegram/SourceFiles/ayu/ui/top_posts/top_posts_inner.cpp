@@ -197,10 +197,7 @@ void InnerWidget::mousePressEvent(QMouseEvent *e) {
 		const auto clicked = cardIndexFromPosition(e->pos());
 		if (clicked >= 0 && clicked < static_cast<int>(_posts.size())) {
 			const auto &post = _posts[clicked];
-			_controller->showPeerHistory(
-				_peer,
-				Window::SectionShow::Way::Forward,
-				post.messageId);
+			_clicks.fire_copy(post.messageId);
 		}
 	}
 }

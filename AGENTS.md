@@ -6,6 +6,14 @@ Avoid building the project.
 
 If you're asked to create a Pull Request, then clearly state in PR description that it was AI generated.
 
+## 重要改动必须留笔记
+
+1. 非平凡改动（改了行为、架构、跨文件契约、流程与工具链、测试策略、落盘/网络/配置格式）前，遵循 .agents/skills/write-notes-like-deepseek/SKILL.md 写或更新笔记；机械性小改（样式、格式化、打标、不改行为的补丁）直接提交。
+2. 写之前先检索 .agents/notes/ 里的同主题旧笔记：有归属就地更新；新想法先放 proposed/，落地随同代码改动转 implemented/；新方案彻底取代旧决策时，同批归档旧篇并标明被谁取代。
+3. 被放弃的方案先写它最强的理由，再解释为什么不用。
+4. 提交前跑 npm run verify-notes，红了先修再交。如果verify-notes指令未构建则先参考skill构建verify-notes。
+5. 笔记语言使用中文。
+
 ## AI Tasks
 
 In this repository "task" is a specific term. It always means one work record in
@@ -20,7 +28,7 @@ that queue.
   durable link between a source commit and its task. Linked slot worktrees live
   in `../ai-tdesktop-worktrees`. Read `../ai-tdesktop/AGENTS.md` before doing
   anything inside that repository.
-- Each record holds `task.md` — one `# ` title line, then one self-contained
+- Each record holds `task.md` — one `#` title line, then one self-contained
   paragraph that is the task's description wherever it is summarized — and
   `state.yaml` with `status`, `type`, `depends_on`, `claimed_by`, and dates.
   Open statuses are `todo`, `in-progress`, `blocked`, and `split-required`;
@@ -113,6 +121,7 @@ Telegram/build/docker/centos_env/build_debug.sh
 ```
 
 **Important:** When running cmake from a shell that doesn't support `cd`, use quoted absolute paths:
+
 ```bash
 cmake --build "l:\Telegram\tx64\out" --config Debug --target Telegram
 ```
@@ -122,6 +131,7 @@ cmake --build "l:\Telegram\tx64\out" --config Debug --target Telegram
 ## Platform-Specific Requirements
 
 ### Windows
+
 - Requires Visual Studio 2022
 - Must run from appropriate Native Tools Command Prompt:
   - "x64 Native Tools Command Prompt" for `win64`
@@ -130,6 +140,7 @@ cmake --build "l:\Telegram\tx64\out" --config Debug --target Telegram
 - Dependencies: `../win64/Libraries` (64-bit) or `../Libraries` (32-bit)
 
 ### macOS
+
 - Requires Xcode
 - Dependencies: `../Libraries/local/Qt-*`
 - First-time configure of a new `out/` tree: set the `QT` environment variable
@@ -147,6 +158,7 @@ cmake --build "l:\Telegram\tx64\out" --config Debug --target Telegram
   added `.style` modules leave the generated `style_*.h` includes stale.
 
 ### Linux
+
 - Build dependencies in `../Libraries`
 - Set `QT` environment variable if needed
 
@@ -158,9 +170,11 @@ cmake --build "l:\Telegram\tx64\out" --config Debug --target Telegram
 ## Troubleshooting
 
 ### "Libraries not found"
+
 Ensure the repository is in `L:\Telegram\tdesktop`. The build system requires `../win64/Libraries` to exist.
 
 ### Build fails with "wrong command prompt"
+
 On Windows, use the correct Visual Studio Native Tools Command Prompt matching your target (x64/x86/ARM64).
 
 ### macOS crashes while reading the cached language pack
@@ -258,7 +272,7 @@ publication at a construction seam).
 ## Commits
 
 - Subject: one concise, plain-language line summarizing the change, ~50-60 characters, matching the style of recent `git log` subjects. This is usually the entire message.
-- Decide the `[ai] ` prefix separately for each commit. Use it only when every
+- Decide the `[ai]` prefix separately for each commit. Use it only when every
   retained change in that commit, and the commit's purpose, are exclusively
   about the AI workflow: the agent harness, skills, prompts, custom commands,
   agent documentation, or AI testing infrastructure. Typical qualifying paths
@@ -267,10 +281,10 @@ publication at a construction seam).
   prefix. Product-specific test seams, app code, and build-system integration do
   not qualify merely because agents use them for verification. Split mixed
   workflow and product work into separate commits when practical; otherwise the
-  mixed commit must not use `[ai] `. Do not count the disposable test overlay or
+  mixed commit must not use `[ai]`. Do not count the disposable test overlay or
   external AI task artifacts. Every other commit must not contain `[ai]`
   anywhere.
-- The `[ai] ` prefix marks the commit's scope, never its authorship. It does
+- The `[ai]` prefix marks the commit's scope, never its authorship. It does
   not mean "authored by an AI": an AI-authored product fix takes a plain
   subject, and a workflow-only commit takes the prefix no matter who wrote it.
 - For ordinary work not associated with an AI task, add a short plain-language body only when the subject can't carry it (what was done, not the technical how) — a line or two at most.
@@ -349,7 +363,7 @@ Prefer the normal return type form when the opening line fits comfortably, rough
 ```cpp
 // GOOD:
 [[nodiscard]] TextWithEntities FlattenSummaryBlocks(
-	const std::vector<Block> &blocks);
+ const std::vector<Block> &blocks);
 ```
 
 Do not use one-line trailing return types, or put the trailing return type after `)` on the same line. If it fits on one line with trailing syntax, the normal form would be shorter and easier to read:
@@ -360,7 +374,7 @@ auto ComputeTitle() -> QString;
 
 // BAD:
 [[nodiscard]] auto FlattenSummaryBlocks(
-	const std::vector<Block> &blocks) -> TextWithEntities;
+ const std::vector<Block> &blocks) -> TextWithEntities;
 ```
 
 Use `auto` with a trailing return type only when the normal opening line
@@ -375,7 +389,7 @@ HistoryView::Controls::SetupCaptionAiButton(SetupCaptionAiButtonArgs &&args);
 ```cpp
 // GOOD:
 auto HistoryView::Controls::SetupCaptionAiButton(
-		SetupCaptionAiButtonArgs &&args)
+  SetupCaptionAiButtonArgs &&args)
 -> not_null<HistoryView::Controls::ComposeAiButton*>;
 ```
 
@@ -410,7 +424,7 @@ UnixSpecificCode();
 
 // GOOD - the all-other branch, runtime (same meaning, NOT Linux-only):
 if (Platform::IsLinux()) {
-	UnixSpecificCode();
+ UnixSpecificCode();
 }
 ```
 
@@ -529,9 +543,11 @@ api().request(MTPnamespace_MethodName(
 ```
 
 **Key points:**
+
 - Always refer to `api.tl` for method signatures and return types
 - Use generated `MTP...` types for parameters (`MTP_int`, `MTP_string`, etc.)
 - For multiple constructors, use `.match()` or check `.type()` against `mtpc_` constants then call `.c_constructorName()`:
+
   ```cpp
   // Using match:
   result.match([&](const MTPDuser &data) { ... }, [&](const MTPDuserEmpty &data) { ... });
@@ -540,6 +556,7 @@ api().request(MTPnamespace_MethodName(
       const auto &data = result.c_user(); // asserts on type mismatch
   }
   ```
+
 - For single constructors, use `.data()` shortcut
 - Include `.handleFloodErrors()` before `.send()` in rare cases where you want special case flood error handling
 - Silently ignore HTTP 406 errors in UI: the server uses 406 to mean "show nothing to the user". Guard toasts with `MTP::IgnoreError(error)` or use `MTP::ShowErrorFallback(show, error)` (both in `mtproto/mtproto_response.h`) which shows `error.type()` as a toast unless the error should be ignored.
@@ -561,9 +578,9 @@ the server and only the local reaction is optional.
 
 ```cpp
 api().request(MTPmethod(
-	...
+ ...
 )).done(crl::guard(this, [=](const MTPResult &result) {
-	// runs only while `this` is still alive
+ // runs only while `this` is still alive
 })).send();
 ```
 
@@ -581,10 +598,10 @@ dropped — so never use this when the call itself has to happen.
 
 ```cpp
 _requestId = api().request(MTPmethod(
-	...
+ ...
 )).done([=](const MTPResult &result) {
-	_requestId = 0;
-	...
+ _requestId = 0;
+ ...
 }).send();
 
 // when the result is no longer relevant, and in the destructor:
@@ -598,16 +615,16 @@ more than a request or two.
 
 ```cpp
 // header
-	MTP::Sender _api;
+ MTP::Sender _api;
 
 // constructor initializer list
 , _api(&session->mtp())
 
 // requests sent through it die with the owner
 _api.request(MTPmethod(
-	...
+ ...
 )).done([=](const MTPResult &result) {
-	...
+ ...
 }).send();
 ```
 
@@ -643,6 +660,7 @@ primaryButton: MyButtonStyle(defaultButton) {
 ```
 
 **Built-in types:**
+
 - `int` - Integer numbers (e.g., `maxLines: 3;`)
 - `bool` - Boolean values (e.g., `useShadow: true;`)
 - `pixels` - Pixel values with `px` suffix (e.g., `10px`)
@@ -656,6 +674,7 @@ primaryButton: MyButtonStyle(defaultButton) {
 - `double` - Floating point
 
 **Multi-part icons** (layers drawn bottom-up):
+
 ```style
 myComplexIcon: icon{
   { "gui/icons/background", iconBgColor },
@@ -664,6 +683,7 @@ myComplexIcon: icon{
 ```
 
 **Borders** are typically separate fields, not a single property:
+
 ```style
 chatInput {
   border: 1px;                       // width
@@ -750,6 +770,7 @@ auto filesTextProducer = tr::lng_files_selected(
 ```
 
 **Key points:**
+
 - Pass `tr::now` as first argument for immediate `QString`
 - Omit `tr::now` for reactive `rpl::producer<QString>`
 - Placeholders use `lt_tag_name, value` pattern
@@ -761,6 +782,7 @@ auto filesTextProducer = tr::lng_files_selected(
   - `tr::bold`, `tr::italic`, `tr::underline` — wrap text in that formatting
   - `tr::link` — wrap as a clickable link
   - `tr::url(u"https://..."_q)` — returns a projection that converts text to a link pointing to the given URL; can be passed to `rpl::map` or directly to a `tr::lng_...` call
+
   ```cpp
   // As last argument (projector):
   auto title = tr::lng_export_progress_title(tr::now, tr::bold);
@@ -839,6 +861,7 @@ std::move(merged) | rpl::on_next([=](QString &&value) {
 ```
 
 **Other pipeline starters** — besides `rpl::on_next`, there are:
+
 - `rpl::on_error([=](Error &&e) { ... }, lifetime)` — handle errors
 - `rpl::on_done([=] { ... }, lifetime)` — handle stream completion
 - `rpl::on_next_error_done(nextCb, errorCb, doneCb, lifetime)` — handle all three
@@ -846,6 +869,7 @@ std::move(merged) | rpl::on_next([=](QString &&value) {
 The `Error` template parameter defaults to `rpl::no_error`: `rpl::producer<Type, Error = no_error>`.
 
 **Key points:**
+
 - Explicitly `std::move` producers when starting pipelines
 - Pass `rpl::lifetime` to `on_...` methods or store returned lifetime
 - Use `rpl::duplicate(producer)` to reuse a producer multiple times

@@ -98,6 +98,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/data/messages_storage.h"
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/utils/telegram_helpers.h"
+#include "ayu/data/ayu_database.h"
 
 
 namespace Data {
@@ -3393,6 +3394,12 @@ void Session::checkFormattedDateUpdates() {
 void Session::processMessagesDeleted(
 		PeerId peerId,
 		const QVector<MTPint> &data) {
+	if (peerIsChannel(peerId)) {
+		const auto channelId = peerToChannel(peerId).bare;
+		for (const auto &messageId : data) {
+			AyuDatabase::removePost(channelId, messageId.v);
+		}
+	}
 	const auto list = messagesList(peerId);
 	const auto affected = historyLoaded(peerId);
 	if (!list && !affected) {

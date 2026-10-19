@@ -1,0 +1,12 @@
+{
+  "name": "ayugram-desktop-notes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify-agent-note-tree": "npx tsx .agents/scripts/verify-agent-note-tree.ts",
+    "verify-agent-note-format": "npx tsx .agents/scripts/verify-agent-note-format.ts",
+    "verify-archived": "npx tsx .agents/scripts/verify-archived-agent-notes.ts",
+    "verify-notes": "npx tsx .agents/scripts/verify-agent-note-tree.ts && npx tsx .agents/scripts/verify-agent-note-format.ts && npx tsx .agents/scripts/verify-archived-agent-notes.ts"
+  }
+}

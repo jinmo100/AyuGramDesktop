@@ -393,6 +393,25 @@ void SectionWidget::setupControls() {
 	) | rpl::on_next([=] {
 		onScroll();
 	}, lifetime());
+
+	_inner->clicks(
+	) | rpl::on_next([=](MsgId msgId) {
+		controller()->historyView_showAt(_peer, msgId);
+	}, lifetime());
+
+	AyuDatabase::channelPostRemoved(
+	) | rpl::filter([=](const std::pair<AyuDatabase::ID, int> &pair) {
+		return pair.first == _peer->id.bare;
+	}) | rpl::on_next([=](const std::pair<AyuDatabase::ID, int> &pair) {
+		loadPosts();
+
+	AyuDatabase::channelPostsCleared(
+	) | rpl::filter([=](AyuDatabase::ID channelId) {
+		return channelId == 0 || channelId == _peer->id.bare;
+	}) | rpl::on_next([=] {
+		loadPosts();
+	}, lifetime());
+	}, lifetime());
 }
 
 not_null<PeerData*> SectionWidget::channel() const {

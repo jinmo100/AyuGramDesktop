@@ -9,6 +9,8 @@
 #include "ayu/data/entities.h"
 #include "ayu/libs/sqlite/sqlite_orm.h"
 #include "base/unixtime.h"
+#include "rpl/event_stream.h"
+#include "crl/crl_on_main.h"
 
 #include <mutex>
 
@@ -834,12 +836,26 @@ void evictLruChannels(int maxChannels) {
 	}
 }
 
+rpl::event_stream<std::pair<ID, int>> channelPostRemovedStream;
+rpl::event_stream<ID> channelPostsClearedStream;
+
+rpl::producer<std::pair<ID, int>> channelPostRemoved() {
+	return channelPostRemovedStream.events();
+}
+
+rpl::producer<ID> channelPostsCleared() {
+	return channelPostsClearedStream.events();
+}
+
 void clearChannelPosts(ID channelId) {
 	std::lock_guard lock(databaseMutex);
 	try {
 		storage.remove_all<ChannelTopPost>(
 			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
 		);
+		crl::on_main([=] {
+			channelPostsClearedStream.fire(channelId);
+		});
 	} catch (const std::exception &ex) {
 		LOG(("Failed to clear channel top posts: %1").arg(ex.what()));
 	}
@@ -849,6 +865,9 @@ void clearAllChannelPosts() {
 	std::lock_guard lock(databaseMutex);
 	try {
 		storage.remove_all<ChannelTopPost>();
+		crl::on_main([=] {
+			channelPostsClearedStream.fire(0);
+		});
 	} catch (const std::exception &ex) {
 		LOG(("Failed to clear all channel top posts: %1").arg(ex.what()));
 	}
@@ -863,6 +882,9 @@ void removePost(ID channelId, int messageId) {
 				&& column<ChannelTopPost>(&ChannelTopPost::messageId) == messageId
 			)
 		);
+		crl::on_main([=] {
+			channelPostRemovedStream.fire({ channelId, messageId });
+		});
 	} catch (const std::exception &ex) {
 		LOG(("Failed to remove channel top post: %1").arg(ex.what()));
 	}

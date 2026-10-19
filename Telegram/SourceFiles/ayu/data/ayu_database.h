@@ -7,6 +7,7 @@
 #pragma once
 
 #include "ayu/data/entities.h"
+#include "rpl/producer.h"
 
 #include <functional>
 
@@ -78,6 +79,8 @@ void evictLruChannels(int maxChannels = 30);
 void clearChannelPosts(ID channelId);
 void clearAllChannelPosts();
 void removePost(ID channelId, int messageId);
+[[nodiscard]] rpl::producer<std::pair<ID, int>> channelPostRemoved();
+[[nodiscard]] rpl::producer<ID> channelPostsCleared();
 
 std::vector<ChannelTopPost> getChannelTopPosts(
 	ID channelId,
