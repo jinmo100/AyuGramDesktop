@@ -2359,7 +2359,9 @@ bool checkReadyUpdate() {
 void UpdateApplication() {
 	if (UpdaterDisabled()) {
 		const auto url = [&] {
-#ifdef OS_WIN_STORE
+#ifdef TDESKTOP_FORK_RELEASES_URL
+			return TDESKTOP_FORK_RELEASES_URL;
+#elif defined OS_WIN_STORE
 			return "https://www.microsoft.com/en-us/store/p/telegram-desktop/9nztwsqntd0s";
 #elif defined OS_MAC_STORE // OS_WIN_STORE
 			return "https://itunes.apple.com/ae/app/telegram-desktop/id946399090";

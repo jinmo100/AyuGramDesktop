@@ -4,6 +4,8 @@
 
 [ English  |   [Русский](README-RU.md) ]
 
+For this fork's upstream synchronization and Windows portable test releases, see [AyuGram-Jinmo release instructions](docs/fork-release.md).
+
 ## Features
 
 - Full ghost mode (flexible)

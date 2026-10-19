@@ -90,6 +90,11 @@ void AboutBox(not_null<Ui::GenericBox*> box, Window::SessionController* controll
 	addText(Text());
 
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+#ifdef TDESKTOP_FORK_RELEASES_URL
+	box->addLeftButton(tr::lng_about_fork_releases(), [] {
+		File::OpenUrl(Core::App().changelogLink());
+	});
+#else
 	box->addLeftButton(
 		rpl::single(QString("@AyuGramReleases")),
 		[box, controller]
@@ -99,6 +104,7 @@ void AboutBox(not_null<Ui::GenericBox*> box, Window::SessionController* controll
 				.usernameOrId = QString("ayugramreleases"),
 			});
 		});
+#endif
 
 	box->setWidth(st::aboutWidth);
 }

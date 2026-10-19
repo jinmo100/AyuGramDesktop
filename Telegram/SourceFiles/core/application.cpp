@@ -1277,7 +1277,11 @@ bool Application::openInternalUrl(const QString &url, QVariant context) {
 }
 
 QString Application::changelogLink() const {
+#ifdef TDESKTOP_FORK_RELEASES_URL
+	return QString::fromLatin1(TDESKTOP_FORK_RELEASES_URL);
+#else
 	return u"https://github.com/AyuGram/AyuGramDesktop/releases"_q;
+#endif
 }
 
 bool Application::openCustomUrl(

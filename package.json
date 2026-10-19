@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "verify-agent-note-tree": "npx tsx .agents/scripts/verify-agent-note-tree.ts",
-    "verify-agent-note-format": "npx tsx .agents/scripts/verify-agent-note-format.ts",
-    "verify-archived": "npx tsx .agents/scripts/verify-archived-agent-notes.ts",
-    "verify-notes": "npx tsx .agents/scripts/verify-agent-note-tree.ts && npx tsx .agents/scripts/verify-agent-note-format.ts && npx tsx .agents/scripts/verify-archived-agent-notes.ts"
+    "verify-agent-note-tree": "tsx .agents/scripts/verify-agent-note-tree.ts",
+    "verify-agent-note-format": "tsx .agents/scripts/verify-agent-note-format.ts",
+    "verify-archived": "tsx .agents/scripts/verify-archived-agent-notes.ts",
+    "verify-notes": "tsx .agents/scripts/verify-agent-note-tree.ts && tsx .agents/scripts/verify-agent-note-format.ts && tsx .agents/scripts/verify-archived-agent-notes.ts"
+  },
+  "devDependencies": {
+    "tsx": "4.20.6"
   }
 }

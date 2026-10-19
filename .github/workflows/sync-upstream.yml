@@ -1,0 +1,112 @@
+name: Sync AyuGram upstream
+
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'jinmo100/AyuGramDesktop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+      base: ${{ steps.sync.outputs.base }}
+      head: ${{ steps.sync.outputs.head }}
+      pr: ${{ steps.sync.outputs.pr }}
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ vars.SYNC_APP_ID }}
+          private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: AyuGramDesktop
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          token: ${{ steps.app.outputs.token }}
+          fetch-depth: 0
+      - name: Update mirror and reuse sync PR
+        id: sync
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: python3 tools/fork_sync.py prepare
+
+  validate:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      candidate: ${{ steps.merge.outputs.candidate }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.2'
+          cache: false
+      - name: Install fixed workflow validator
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+      - name: Materialize the exact candidate
+        id: merge
+        env:
+          BASE: ${{ needs.prepare.outputs.base }}
+          HEAD: ${{ needs.prepare.outputs.head }}
+        run: |
+          git fetch --no-tags origin "$BASE" "$HEAD"
+          python3 tools/fork_sync.py candidate --base "$BASE" --head "$HEAD"
+      - name: Validate candidate without write credentials
+        env:
+          CANDIDATE: ${{ steps.merge.outputs.candidate }}
+          AGENT_NOTE_ARCHIVE_BASE_REF: ${{ needs.prepare.outputs.base }}
+        run: |
+          git checkout --detach "$CANDIDATE"
+          bash tools/check-fork-sync.sh
+
+  merge:
+    needs: [prepare, validate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ vars.SYNC_APP_ID }}
+          private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: AyuGramDesktop
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          token: ${{ steps.app.outputs.token }}
+          fetch-depth: 0
+      - name: Advance dev to the checked merge with an exact base lease
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BASE: ${{ needs.prepare.outputs.base }}
+          HEAD: ${{ needs.prepare.outputs.head }}
+          EXPECTED: ${{ needs.validate.outputs.candidate }}
+          PR: ${{ needs.prepare.outputs.pr }}
+        run: python3 tools/fork_sync.py finalize --base "$BASE" --head "$HEAD" --expected "$EXPECTED" --pr "$PR"
