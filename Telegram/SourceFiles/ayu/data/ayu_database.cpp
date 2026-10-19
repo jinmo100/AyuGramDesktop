@@ -678,6 +678,36 @@ bool hasPerDialogFilters() {
 
 namespace {
 
+void evictLruChannelsLocked(int maxChannels) {
+	auto rows = storage.select(
+		columns(&ChannelTopPost::channelId, max(&ChannelTopPost::scanTime)),
+		group_by(&ChannelTopPost::channelId)
+	);
+	if (static_cast<int>(rows.size()) <= maxChannels) {
+		return;
+	}
+
+	std::sort(rows.begin(), rows.end(), [](const auto &a, const auto &b) {
+		const auto timeA = std::get<1>(a) ? *std::get<1>(a) : 0;
+		const auto timeB = std::get<1>(b) ? *std::get<1>(b) : 0;
+		return timeA > timeB;
+	});
+
+	std::vector<ID> channelsToEvict;
+	channelsToEvict.reserve(rows.size() - maxChannels);
+	for (auto i = static_cast<size_t>(maxChannels); i < rows.size(); ++i) {
+		channelsToEvict.push_back(std::get<0>(rows[i]));
+	}
+
+	storage.begin_transaction();
+	for (const auto channelId : channelsToEvict) {
+		storage.remove_all<ChannelTopPost>(
+			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
+		);
+	}
+	storage.commit();
+}
+
 template<typename WhereExpr, typename OrderExpr>
 std::vector<ChannelTopPost> queryTopPosts(
 	WhereExpr &&whereClause,
@@ -794,36 +824,6 @@ void pruneExpiredChannelPosts(int maxAgeSeconds) {
 	}
 }
 
-void evictLruChannelsLocked(int maxChannels) {
-	auto rows = storage.select(
-		columns(&ChannelTopPost::channelId, max(&ChannelTopPost::scanTime)),
-		group_by(&ChannelTopPost::channelId)
-	);
-	if (static_cast<int>(rows.size()) <= maxChannels) {
-		return;
-	}
-
-	std::sort(rows.begin(), rows.end(), [](const auto &a, const auto &b) {
-		const auto timeA = std::get<1>(a) ? *std::get<1>(a) : 0;
-		const auto timeB = std::get<1>(b) ? *std::get<1>(b) : 0;
-		return timeA > timeB;
-	});
-
-	std::vector<ID> channelsToEvict;
-	channelsToEvict.reserve(rows.size() - maxChannels);
-	for (auto i = static_cast<size_t>(maxChannels); i < rows.size(); ++i) {
-		channelsToEvict.push_back(std::get<0>(rows[i]));
-	}
-
-	storage.begin_transaction();
-	for (const auto channelId : channelsToEvict) {
-		storage.remove_all<ChannelTopPost>(
-			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
-		);
-	}
-	storage.commit();
-}
-
 void evictLruChannels(int maxChannels) {
 	std::lock_guard lock(databaseMutex);
 	try {
@@ -855,7 +855,7 @@ void clearChannelPosts(ID channelId) {
 			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
 		);
 		crl::on_main([=] {
-			channelPostsClearedStream.fire(channelId);
+			channelPostsClearedStream.fire_copy(channelId);
 		});
 	} catch (const std::exception &ex) {
 		LOG(("Failed to clear channel top posts: %1").arg(ex.what()));

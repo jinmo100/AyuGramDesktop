@@ -22,9 +22,9 @@ namespace TopPosts {
 
 IncrementalSyncController::IncrementalSyncController(
 	not_null<PeerData*> peer,
-	TopPostsFilter filter)
+	AyuDatabase::TopPostsFilter filter)
 : _peer(peer)
-, _channelId(peer->id.bare)
+, _channelId(getBareID(peer))
 , _filter(filter)
 , _api(&peer->session().mtp()) {
 	_throttleTimer.setCallback([=] {
@@ -55,8 +55,8 @@ void IncrementalSyncController::start() {
 	_cachedPostsMap.clear();
 	const auto cachedPosts = AyuDatabase::getChannelTopPosts(
 		_channelId,
-		TopPostsSortOrder::Reactions,
-		TopPostsFilter::All,
+		AyuDatabase::TopPostsSortOrder::Reactions,
+		AyuDatabase::TopPostsFilter::All,
 		300);
 	for (const auto &post : cachedPosts) {
 		_cachedPostsMap.emplace(post.messageId, post);
@@ -105,7 +105,7 @@ ID IncrementalSyncController::channelId() const {
 	return _channelId;
 }
 
-TopPostsFilter IncrementalSyncController::filter() const {
+AyuDatabase::TopPostsFilter IncrementalSyncController::filter() const {
 	return _filter;
 }
 
@@ -136,7 +136,7 @@ void IncrementalSyncController::requestNextDeltaBatch() {
 		return;
 	}
 
-	if (_filter == TopPostsFilter::All) {
+	if (_filter == AyuDatabase::TopPostsFilter::All) {
 		_requestId = _api.request(MTPmessages_GetHistory(
 			_peer->input(),
 			MTP_int(_deltaOffsetId.bare),
@@ -154,7 +154,7 @@ void IncrementalSyncController::requestNextDeltaBatch() {
 			handleError(error);
 		}).send();
 	} else {
-		const auto mtpFilter = (_filter == TopPostsFilter::Documents)
+		const auto mtpFilter = (_filter == AyuDatabase::TopPostsFilter::Documents)
 			? MTP_inputMessagesFilterDocument()
 			: MTP_inputMessagesFilterPhotoVideo();
 		_requestId = _api.request(MTPmessages_Search(
@@ -424,7 +424,7 @@ void IncrementalSyncController::finish(
 
 		if (!_allUpdatedPosts.empty()) {
 			_updatedPostsStream.fire_copy(_allUpdatedPosts);
-			crl::async([posts = _allUpdatedPosts, channelId = _channelId, weak = base::make_weak(this), finalState, error] {
+			crl::async([this, posts = _allUpdatedPosts, channelId = _channelId, weak = base::make_weak(this), finalState, error] {
 				AyuDatabase::saveChannelPosts(posts);
 				AyuDatabase::truncateChannelPosts(channelId, 300);
 				crl::on_main(weak, [=] {

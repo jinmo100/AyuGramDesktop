@@ -56,7 +56,7 @@ namespace {
 	if (end == std::string::npos) {
 		return u"🔥"_q;
 	}
-	auto emoji = QString::fromUtf8(json.substr(start + 1, end - start - 1));
+	auto emoji = QString::fromStdString(json.substr(start + 1, end - start - 1));
 	if (emoji.isEmpty() || std::all_of(emoji.begin(), emoji.end(), [](QChar c) { return c.isDigit(); })) {
 		return u"🔥"_q;
 	}
@@ -114,7 +114,7 @@ InnerWidget::InnerWidget(
 void InnerWidget::setPosts(std::vector<ChannelTopPost> posts) {
 	_posts = std::move(posts);
 	_hoveredIndex = -1;
-	resizeGetHeight(width());
+	resizeToWidth(width());
 	update();
 }
 
@@ -191,7 +191,7 @@ void InnerWidget::mouseMoveEvent(QMouseEvent *e) {
 	}
 }
 
-void InnerWidget::leaveEvent(QEvent *e) {
+void InnerWidget::leaveEventHook(QEvent *e) {
 	if (_hoveredIndex != -1) {
 		_hoveredIndex = -1;
 		setCursor(style::cur_default);
@@ -279,7 +279,7 @@ void InnerWidget::paintCard(
 	const auto textTop = rect.y() + st::topPostsCardTextTop;
 	const auto textMaxW = std::max(0, dateX - textLeft - st::topPostsBadgeMargin);
 
-	auto snippet = QString::fromUtf8(post.textSnippet);
+	auto snippet = QString::fromStdString(post.textSnippet);
 	if (snippet.trimmed().isEmpty()) {
 		snippet = FormatMediaPlaceholder(post.type(), post.groupedCount);
 	}

@@ -47,7 +47,7 @@ public:
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void mouseMoveEvent(QMouseEvent *e) override;
-	void leaveEvent(QEvent *e) override;
+	void leaveEventHook(QEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
 	int resizeGetHeight(int newWidth) override;
 	void visibleTopBottomUpdated(int visibleTop, int visibleBottom) override;

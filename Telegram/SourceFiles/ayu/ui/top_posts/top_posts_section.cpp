@@ -7,6 +7,8 @@
 #include "ayu/ui/top_posts/top_posts_section.h"
 
 #include "ayu/ui/top_posts/top_posts_inner.h"
+#include "ayu/utils/telegram_helpers.h"
+#include "lang_auto.h"
 #include "data/data_channel.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
@@ -146,14 +148,14 @@ FixedBar::FixedBar(
 , _hasDiscussion(HasDiscussionGroup(peer))
 , _backButton(this)
 , _menuToggle(this, st::topBarMenuToggle)
-, _reactionsSort(this, u"🔥 "_q + tr::ayu_TopPostsSortReactions(tr::now), st::defaultFlatButton)
-, _commentsSort(this, u"💬 "_q + tr::ayu_TopPostsSortComments(tr::now), st::defaultFlatButton)
-, _viewsSort(this, u"👁 "_q + tr::ayu_TopPostsSortViews(tr::now), st::defaultFlatButton)
-, _allFilter(this, tr::ayu_TopPostsFilterAll(tr::now), st::defaultFlatButton)
-, _docsFilter(this, tr::ayu_TopPostsFilterDocs(tr::now), st::defaultFlatButton)
-, _mediaFilter(this, tr::ayu_TopPostsFilterMedia(tr::now), st::defaultFlatButton)
+, _reactionsSort(this, u"🔥 "_q + tr::ayu_TopPostsSortReactions(tr::now), st::topPostsTabButton)
+, _commentsSort(this, u"💬 "_q + tr::ayu_TopPostsSortComments(tr::now), st::topPostsTabButton)
+, _viewsSort(this, u"👁 "_q + tr::ayu_TopPostsSortViews(tr::now), st::topPostsTabButton)
+, _allFilter(this, tr::ayu_TopPostsFilterAll(tr::now), st::topPostsTabButton)
+, _docsFilter(this, tr::ayu_TopPostsFilterDocs(tr::now), st::topPostsTabButton)
+, _mediaFilter(this, tr::ayu_TopPostsFilterMedia(tr::now), st::topPostsTabButton)
 , _banner(this)
-, _cancelButton(_banner.data(), tr::lng_cancel(tr::now), st::defaultFlatButton)
+, _cancelButton(_banner.data(), tr::lng_cancel(tr::now), st::topPostsTabButton) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
 
 	_backButton->moveToLeft(0, 0);
@@ -257,7 +259,7 @@ void FixedBar::showBanner(const QString &text, bool canCancel) {
 	_cancelButton->setVisible(canCancel);
 	_bannerVisible = true;
 	_banner->show();
-	resizeGetHeight(width());
+	resizeToWidth(width());
 	_heightChanged.fire_copy(height());
 	update();
 }
@@ -266,7 +268,7 @@ void FixedBar::hideBanner() {
 	if (_bannerVisible) {
 		_bannerVisible = false;
 		_banner->hide();
-		resizeGetHeight(width());
+		resizeToWidth(width());
 		_heightChanged.fire_copy(height());
 		update();
 	}
@@ -333,11 +335,12 @@ void FixedBar::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 	p.fillRect(e->rect(), st::topBarBg);
 
-	p.setFont(st::topBarTitleFont);
-	p.setPen(st::topBarTitleFg);
+	p.setFont(st::semiboldFont);
+	p.setPen(st::windowFg);
 	const auto title = tr::ayu_TopPostsTitle(tr::now);
 	const auto titleLeft = _backButton->width() + st::topPostsTabMargin;
-	const auto titleY = (st::topBarHeight + p.fontMetrics().ascent()) / 2 - 2;
+	const auto titleY = (st::topBarHeight - p.fontMetrics().height()) / 2
+		+ p.fontMetrics().ascent();
 	p.drawText(titleLeft, titleY, title);
 }
 
@@ -424,15 +427,15 @@ void SectionWidget::setupControls() {
 	}, lifetime());
 
 	AyuDatabase::channelPostRemoved(
-	) | rpl::filter([=](const std::pair<AyuDatabase::ID, int> &pair) {
-		return pair.first == _peer->id.bare;
-	}) | rpl::on_next([=](const std::pair<AyuDatabase::ID, int> &pair) {
+	) | rpl::filter([=](const std::pair<ID, int> &pair) {
+		return pair.first == getBareID(_peer);
+	}) | rpl::on_next([=](const std::pair<ID, int> &pair) {
 		loadPosts();
 	}, lifetime());
 
 	AyuDatabase::channelPostsCleared(
-	) | rpl::filter([=](AyuDatabase::ID channelId) {
-		return channelId == 0 || channelId == _peer->id.bare;
+	) | rpl::filter([=](ID channelId) {
+		return channelId == 0 || channelId == getBareID(_peer);
 	}) | rpl::on_next([=] {
 		loadPosts();
 	}, lifetime());
@@ -535,6 +538,10 @@ void SectionWidget::updateLayout() {
 		_fixedBar->height(),
 		width(),
 		height() - _fixedBar->height());
+	if (_inner) {
+		_inner->resizeToWidth(_scroll->width());
+	}
+	onScroll();
 }
 
 void SectionWidget::resizeEvent(QResizeEvent *e) {
@@ -542,7 +549,7 @@ void SectionWidget::resizeEvent(QResizeEvent *e) {
 }
 
 void SectionWidget::loadPosts() {
-	const auto channelId = _peer->id.bare;
+	const auto channelId = getBareID(_peer);
 	auto posts = AyuDatabase::getChannelTopPosts(
 		channelId,
 		_sortOrder,
@@ -603,10 +610,10 @@ void SectionWidget::handleScanProgress(const ScanProgress &p) {
 	case ScanState::Scanning: {
 		const auto text = tr::ayu_TopPostsScanningProgress(
 			tr::now,
-			lt_count,
-			p.scannedCount,
+			lt_current,
+			QString::number(p.scannedCount),
 			lt_total,
-			p.targetCount);
+			QString::number(p.targetCount));
 		_fixedBar->showBanner(text, true);
 		break;
 	}
@@ -614,7 +621,7 @@ void SectionWidget::handleScanProgress(const ScanProgress &p) {
 		const auto text = tr::ayu_TopPostsRateLimited(
 			tr::now,
 			lt_seconds,
-			p.floodWaitSeconds);
+			QString::number(p.floodWaitSeconds));
 		_fixedBar->showBanner(text, true);
 		break;
 	}
@@ -674,18 +681,18 @@ void SectionWidget::handleSyncProgress(const SyncProgress &p) {
 	case SyncState::SyncingDeltas: {
 		const auto text = tr::ayu_TopPostsSyncingDeltas(
 			tr::now,
-			lt_count,
-			p.deltasFetched);
+			lt_current,
+			QString::number(p.deltasFetched));
 		_fixedBar->showBanner(text, true);
 		break;
 	}
 	case SyncState::RefreshingCached: {
 		const auto text = tr::ayu_TopPostsSyncingProgress(
 			tr::now,
-			lt_count,
-			p.refreshedCount,
+			lt_current,
+			QString::number(p.refreshedCount),
 			lt_total,
-			p.totalToRefresh);
+			QString::number(p.totalToRefresh));
 		_fixedBar->showBanner(text, true);
 		break;
 	}
@@ -693,7 +700,7 @@ void SectionWidget::handleSyncProgress(const SyncProgress &p) {
 		const auto text = tr::ayu_TopPostsRateLimited(
 			tr::now,
 			lt_seconds,
-			p.floodWaitSeconds);
+			QString::number(p.floodWaitSeconds));
 		_fixedBar->showBanner(text, true);
 		break;
 	}
@@ -726,7 +733,7 @@ void SectionWidget::handleSyncProgress(const SyncProgress &p) {
 }
 
 void SectionWidget::clearCache() {
-	AyuDatabase::clearChannelPosts(_peer->id.bare);
+	AyuDatabase::clearChannelPosts(getBareID(_peer));
 	if (_inner) {
 		_inner->setEmptyMessage(tr::ayu_TopPostsCacheCleared(tr::now));
 		_inner->setPosts({});

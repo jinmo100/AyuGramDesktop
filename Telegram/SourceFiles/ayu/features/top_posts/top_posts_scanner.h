@@ -59,7 +59,7 @@ public:
 	Scanner(
 		not_null<PeerData*> peer,
 		int scanWindow = kDefaultScanWindow,
-		TopPostsFilter filter = TopPostsFilter::All);
+		AyuDatabase::TopPostsFilter filter = AyuDatabase::TopPostsFilter::All);
 	~Scanner();
 
 	void start();
@@ -70,7 +70,7 @@ public:
 	[[nodiscard]] not_null<PeerData*> peer() const;
 	[[nodiscard]] ID channelId() const;
 	[[nodiscard]] int scanWindow() const;
-	[[nodiscard]] TopPostsFilter filter() const;
+	[[nodiscard]] AyuDatabase::TopPostsFilter filter() const;
 
 	[[nodiscard]] ScanProgress progressValue() const;
 	[[nodiscard]] rpl::producer<ScanProgress> progress() const;
@@ -90,7 +90,7 @@ private:
 	const not_null<PeerData*> _peer;
 	const ID _channelId = 0;
 	const int _scanWindow = kDefaultScanWindow;
-	const TopPostsFilter _filter = TopPostsFilter::All;
+	const AyuDatabase::TopPostsFilter _filter = AyuDatabase::TopPostsFilter::All;
 
 	MTP::Sender _api;
 	mtpRequestId _requestId = 0;

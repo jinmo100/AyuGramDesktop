@@ -59,6 +59,22 @@ Status: implemented
 1. 增量刷新仅更新最近新消息及已入榜 Top 300 项，若早期冷门帖发生剧烈反应爆发，需通过全量重新扫描获取更新。
 2. 仅在广播频道（Channel）右上角菜单和 AyuGram 菜单中展示该入口，普通群聊与私聊不开放此功能。
 
+### Windows / Qt 5 编译兼容修复
+
+原生 Windows Debug 编译前检查发现：构造函数缺少函数体起始括号、数据库枚举与全局 ID 的命名空间误用、外层异步 lambda 未捕获内层回调所需的 `this`，以及 Qt 5 不接受 `std::string` 的 `QString::fromUtf8` 重载。修复采用显式命名空间、补齐捕获与 `QString::fromStdString`；主线程回调继续由弱引用保护，数据库后台写入不访问对象成员。使用 E 盘的 MSVC / Qt 5.15.19 原生 Debug 编译验证，依赖、缓存与临时目录统一位于 `E:\TBuild`。静态 seam 检查无法代替真实编译；最终编译结果以构建日志与退出码为准。
+
+语言生成器还拒绝非复数键中的保留占位符 `{count}`。扫描与同步进度改用 `{current}`，数字与等待秒数显式转换为 `QString`；真正的项目数量文案保留 `#one` / `#other` 与 `{count}`。这样保持进度文案语义，也符合生成的普通占位符接口。
+
+MSVC 实际编译继续暴露接口不匹配：离开事件应覆盖 `leaveEventHook`；设置页基类、翻译投影和样式需要显式包含声明；数据库清理事件的常量捕获使用 `fire_copy`；LRU 内部函数移到调用之前的匿名命名空间。频道缓存统一经 `getBareID` 获取不含类型标记的正数 ID，避免直接改用 `PeerId::value` 导致缓存键变化。项目没有 `defaultFlatButton` 实例，因此新增继承 `historyComposeButton` 的榜单按钮样式，并将高度与文字偏移保留在 `.style` 中。标题改用现有 `semiboldFont` / `windowFg`，通过字体度量垂直居中，去掉未缩放的像素补偿。
+
+2026-10-20 原生 Windows x64 Debug 构建完成，`telegram-debug.exit` 为 `0`，日志确认 `Telegram.vcxproj` 输出 `E:\TBuild\tdesktop\out\Debug\AyuGram.exe`（并非 `Telegram.exe`）。产物版本 `7.2.9.0`，大小 520677376 字节，SHA-256 为 `8DC00EDB09B36934F932431753AA9A42BF07E3913725EFE3F791EED375773113`。便携标记目录已存在；此次验证覆盖配置、语言与样式生成、MSVC 编译和链接，未运行登录后的频道榜单交互。
+
+Windows 构建技能同步记录本次恢复边界：优先复用已完成依赖与 Qt 安装产物，只恢复经证实为空的子模块；成功以本轮退出码、链接日志和新产物共同确认。重跑完整准备流程的优势是统一重建依赖，但会增加耗时并可能清理已修复的 Qt 源码，因此已有完整依赖时采用增量构建，缺项时只恢复对应阶段。技能中的版本与耗时属于历史快照，后续必须检查现场环境。
+
+实机出现“工具栏可见、内容全空”的回归后，布局验证直接抽取生产 `SectionWidget::updateLayout`、`InnerWidget::setPosts` 与 `resizeGetHeight` 方法体，在原生 Qt Widgets / QScrollArea 中执行。旧版六项几何断言全部失败：滚动区未给内容设置宽度，`setPosts` 直接调用只计算高度的 `resizeGetHeight`，返回值被丢弃，因此空文案和卡片都没有可绘制区域。修复显式调用 `resizeToWidth` 应用计算结果，并在页面变化时同步内容宽度；该测试使用最小无边距 RpWidget 适配器，覆盖布局契约，不代表登录后网络扫描已验证。
+
+修复后六项布局断言全部通过，Windows Debug 再次编译链接成功。原生 Windows UI Automation 在同一频道实测显示真实帖子；点赞排序首条为 87，浏览量排序首条为 376.8K，评论排序首条为 12，Files 筛选显示无文件提示。用户随后接手剩余测试，未继续验证全量重扫、频控恢复与长期同步。回归入口为 `.scratch/channel-top-posts/test_layout_regression.py`，配套 CMake 仅复用已有 E 盘依赖，避免把生产逻辑重新写一遍当作测试；技能同步记录了几何契约与实机证据边界。
+
 ## Alternatives considered
 
 ### Why not client-side unbounded full scan (客户端全量无界扫描)?

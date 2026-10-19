@@ -10,6 +10,7 @@
 #include "ayu/data/entities.h"
 #include "ayu/features/top_posts/top_posts_scanner.h"
 #include "ayu/features/top_posts/top_posts_sync.h"
+#include "base/object_ptr.h"
 #include "window/section_memento.h"
 #include "window/section_widget.h"
 

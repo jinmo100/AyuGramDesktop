@@ -10,6 +10,7 @@
 #include "ayu/ui/settings/ayu_builder.h"
 #include "ayu/ui/settings/settings_main.h"
 #include "lang_auto.h"
+#include "lang/lang_text_entity.h"
 #include "settings/settings_builder.h"
 #include "settings/settings_common.h"
 #include "ui/boxes/confirm_box.h"
@@ -18,6 +19,7 @@
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_session_controller.h"
 
+#include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 
 namespace Settings {

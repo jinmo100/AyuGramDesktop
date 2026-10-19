@@ -7,6 +7,7 @@
  * Copyright @Radolyn, 2025
  */
 
+using "chat_helpers/chat_helpers.style";
 using "ui/basic.style";
 using "ui/colors.palette";
 using "ui/widgets/widgets.style";
@@ -147,3 +148,8 @@ topPostsBannerHeight: 38px;
 topPostsBannerPadding: margins(12px, 6px, 12px, 6px);
 topPostsEmptyWidth: 320px;
 topPostsEmptyPadding: margins(20px, 16px, 20px, 16px);
+
+topPostsTabButton: FlatButton(historyComposeButton) {
+	height: topPostsTabHeight;
+	textTop: 6px;
+}

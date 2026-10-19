@@ -121,9 +121,9 @@ ChannelTopPost ExtractPostMetrics(
 Scanner::Scanner(
 	not_null<PeerData*> peer,
 	int scanWindow,
-	TopPostsFilter filter)
+	AyuDatabase::TopPostsFilter filter)
 : _peer(peer)
-, _channelId(peer->id.bare)
+, _channelId(getBareID(peer))
 , _scanWindow(std::clamp(scanWindow, 1, kMaxScanWindow))
 , _filter(filter)
 , _api(&peer->session().mtp()) {
@@ -199,7 +199,7 @@ int Scanner::scanWindow() const {
 	return _scanWindow;
 }
 
-TopPostsFilter Scanner::filter() const {
+AyuDatabase::TopPostsFilter Scanner::filter() const {
 	return _filter;
 }
 
@@ -239,7 +239,7 @@ void Scanner::requestNextBatch() {
 	const auto remaining = _scanWindow - _scannedCount;
 	const auto batchLimit = std::clamp(remaining, 1, kBatchSize);
 
-	if (_filter == TopPostsFilter::All) {
+	if (_filter == AyuDatabase::TopPostsFilter::All) {
 		_requestId = _api.request(MTPmessages_GetHistory(
 			_peer->input(),
 			MTP_int(_offsetId.bare),
@@ -257,7 +257,7 @@ void Scanner::requestNextBatch() {
 			handleError(error);
 		}).send();
 	} else {
-		const auto mtpFilter = (_filter == TopPostsFilter::Documents)
+		const auto mtpFilter = (_filter == AyuDatabase::TopPostsFilter::Documents)
 			? MTP_inputMessagesFilterDocument()
 			: MTP_inputMessagesFilterPhotoVideo();
 		_requestId = _api.request(MTPmessages_Search(
@@ -420,7 +420,7 @@ void Scanner::finish(ScanState finalState, const QString &error) {
 			_batchParsedStream.fire_copy(flushed);
 		}
 		if (_autoSave) {
-			crl::async([posts = flushed, channelId = _channelId, weak = base::make_weak(this), finalState, error] {
+			crl::async([this, posts = flushed, channelId = _channelId, weak = base::make_weak(this), finalState, error] {
 				if (!posts.empty()) {
 					AyuDatabase::saveChannelPosts(posts);
 				}
@@ -435,7 +435,7 @@ void Scanner::finish(ScanState finalState, const QString &error) {
 			return;
 		}
 	} else if (finalState == ScanState::Cancelled && _autoSave) {
-		crl::async([channelId = _channelId, weak = base::make_weak(this), finalState, error] {
+		crl::async([this, channelId = _channelId, weak = base::make_weak(this), finalState, error] {
 			AyuDatabase::truncateChannelPosts(channelId, 300);
 			crl::on_main(weak, [=] {
 				_progress.state = finalState;
