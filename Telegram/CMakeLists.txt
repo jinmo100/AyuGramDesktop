@@ -258,6 +258,10 @@ set(ayugram_files
         ayu/features/top_posts/top_posts_aggregator.h
         ayu/features/top_posts/top_posts_sync.cpp
         ayu/features/top_posts/top_posts_sync.h
+        ayu/ui/top_posts/top_posts_section.cpp
+        ayu/ui/top_posts/top_posts_section.h
+        ayu/ui/top_posts/top_posts_inner.cpp
+        ayu/ui/top_posts/top_posts_inner.h
 
         info/profile/info_profile_music_button.cpp
         info/profile/info_profile_music_button.h
