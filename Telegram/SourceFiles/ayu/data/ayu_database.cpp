@@ -983,4 +983,20 @@ std::vector<int> getChannelTopPostMessageIds(ID channelId) {
 	}
 }
 
+int getChannelTopPostsMaxMessageId(ID channelId) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		const auto rows = storage.select(
+			max(&ChannelTopPost::messageId),
+			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
+		);
+		if (!rows.empty() && rows.front()) {
+			return *rows.front();
+		}
+		return 0;
+	} catch (const std::exception &ex) {
+		LOG(("Failed to get channel top post max message id: %1").arg(ex.what()));
+		return 0;
+	}
+}
 }

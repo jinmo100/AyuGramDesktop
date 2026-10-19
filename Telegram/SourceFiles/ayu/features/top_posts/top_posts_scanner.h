@@ -8,6 +8,7 @@
 
 #include "ayu/data/ayu_database.h"
 #include "ayu/data/entities.h"
+#include "ayu/features/top_posts/top_posts_aggregator.h"
 #include "base/timer.h"
 #include "base/weak_ptr.h"
 #include "mtproto/sender.h"
@@ -105,6 +106,7 @@ private:
 	ScanProgress _progress;
 	rpl::event_stream<ScanProgress> _progressStream;
 	rpl::event_stream<std::vector<ChannelTopPost>> _batchParsedStream;
+	MediaGroupAggregator _aggregator;
 	std::vector<ChannelTopPost> _allParsedPosts;
 
 };

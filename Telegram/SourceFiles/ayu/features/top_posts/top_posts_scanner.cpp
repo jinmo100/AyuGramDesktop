@@ -148,6 +148,7 @@ void Scanner::start() {
 	_matchedCount = 0;
 	_offsetId = 0;
 	_allParsedPosts.clear();
+	_aggregator.reset();
 	_progress.scannedCount = 0;
 	_progress.matchedCount = 0;
 	_progress.targetCount = _scanWindow;
@@ -336,19 +337,22 @@ void Scanner::handleResponse(const MTPmessages_Messages &result) {
 	_progress.targetCount = _scanWindow;
 
 	if (!batchPosts.empty()) {
-		_allParsedPosts.insert(
-			_allParsedPosts.end(),
-			batchPosts.begin(),
-			batchPosts.end());
+		const auto coalesced = _aggregator.feed(batchPosts);
+		if (!coalesced.empty()) {
+			_allParsedPosts.insert(
+				_allParsedPosts.end(),
+				coalesced.begin(),
+				coalesced.end());
 
-		if (_autoSave) {
-			crl::async([posts = batchPosts, channelId = _channelId] {
-				AyuDatabase::saveChannelPosts(posts);
-				AyuDatabase::truncateChannelPosts(channelId, 300);
-			});
+			if (_autoSave) {
+				crl::async([posts = coalesced, channelId = _channelId] {
+					AyuDatabase::saveChannelPosts(posts);
+					AyuDatabase::truncateChannelPosts(channelId, 300);
+				});
+			}
+
+			_batchParsedStream.fire_copy(coalesced);
 		}
-
-		_batchParsedStream.fire_copy(batchPosts);
 	}
 
 	_progressStream.fire_copy(_progress);
@@ -409,6 +413,26 @@ void Scanner::finish(ScanState finalState, const QString &error) {
 	_progress.state = finalState;
 	_progress.errorMessage = error;
 	_progress.floodWaitSeconds = 0;
+
+	if (finalState == ScanState::Completed) {
+		const auto flushed = _aggregator.flush();
+		if (!flushed.empty()) {
+			_allParsedPosts.insert(
+				_allParsedPosts.end(),
+				flushed.begin(),
+				flushed.end());
+
+			if (_autoSave) {
+				crl::async([posts = flushed, channelId = _channelId] {
+					AyuDatabase::saveChannelPosts(posts);
+					AyuDatabase::truncateChannelPosts(channelId, 300);
+				});
+			}
+
+			_batchParsedStream.fire_copy(flushed);
+		}
+	}
+
 	_progressStream.fire_copy(_progress);
 }
 

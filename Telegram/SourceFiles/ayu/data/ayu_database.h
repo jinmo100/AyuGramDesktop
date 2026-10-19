@@ -88,6 +88,7 @@ std::vector<ChannelTopPost> getChannelTopPosts(
 bool hasChannelTopPosts(ID channelId);
 int getChannelTopPostsCount(ID channelId);
 std::vector<int> getChannelTopPostMessageIds(ID channelId);
+int getChannelTopPostsMaxMessageId(ID channelId);
 
 void moveCurrentDatabase();
 
