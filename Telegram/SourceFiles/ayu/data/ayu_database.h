@@ -56,6 +56,39 @@ void deleteAllExclusions();
 bool hasFilters();
 bool hasPerDialogFilters();
 
+enum class TopPostsSortOrder {
+	Reactions,
+	Comments,
+	Views,
+};
+
+enum class TopPostsFilter {
+	All,
+	Documents,
+	Media,
+};
+
+void saveChannelPosts(const std::vector<ChannelTopPost> &posts);
+void saveChannelPost(const ChannelTopPost &post);
+
+void truncateChannelPosts(ID channelId, int maxCount = 300);
+void pruneExpiredChannelPosts(int maxAgeSeconds = 30 * 86400);
+void evictLruChannels(int maxChannels = 30);
+
+void clearChannelPosts(ID channelId);
+void clearAllChannelPosts();
+void removePost(ID channelId, int messageId);
+
+std::vector<ChannelTopPost> getChannelTopPosts(
+	ID channelId,
+	TopPostsSortOrder sortOrder = TopPostsSortOrder::Reactions,
+	TopPostsFilter filter = TopPostsFilter::All,
+	int totalLimit = 300,
+	int offset = 0);
+bool hasChannelTopPosts(ID channelId);
+int getChannelTopPostsCount(ID channelId);
+std::vector<int> getChannelTopPostMessageIds(ID channelId);
+
 void moveCurrentDatabase();
 
 }

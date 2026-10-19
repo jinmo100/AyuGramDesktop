@@ -146,6 +146,47 @@ auto storage = make_storage(
 		make_column("dialogId", &SpyMessageContentsRead::dialogId),
 		make_column("messageId", &SpyMessageContentsRead::messageId),
 		make_column("entityCreateDate", &SpyMessageContentsRead::entityCreateDate)
+	),
+	make_unique_index(
+		"idx_channel_top_post_channel_message",
+		column<ChannelTopPost>(&ChannelTopPost::channelId),
+		column<ChannelTopPost>(&ChannelTopPost::messageId)
+	),
+	make_index(
+		"idx_channel_top_post_channel_reactions",
+		column<ChannelTopPost>(&ChannelTopPost::channelId),
+		column<ChannelTopPost>(&ChannelTopPost::reactionsCount),
+		column<ChannelTopPost>(&ChannelTopPost::commentsCount)
+	),
+	make_index(
+		"idx_channel_top_post_channel_comments",
+		column<ChannelTopPost>(&ChannelTopPost::channelId),
+		column<ChannelTopPost>(&ChannelTopPost::commentsCount),
+		column<ChannelTopPost>(&ChannelTopPost::reactionsCount)
+	),
+	make_index(
+		"idx_channel_top_post_channel_scanTime",
+		column<ChannelTopPost>(&ChannelTopPost::channelId),
+		column<ChannelTopPost>(&ChannelTopPost::scanTime)
+	),
+	make_index(
+		"idx_channel_top_post_scanTime",
+		column<ChannelTopPost>(&ChannelTopPost::scanTime)
+	),
+	make_table<ChannelTopPost>(
+		"ChannelTopPost",
+		make_column("id", &ChannelTopPost::id, primary_key().autoincrement()),
+		make_column("channelId", &ChannelTopPost::channelId),
+		make_column("messageId", &ChannelTopPost::messageId),
+		make_column("date", &ChannelTopPost::date),
+		make_column("reactionsCount", &ChannelTopPost::reactionsCount),
+		make_column("commentsCount", &ChannelTopPost::commentsCount),
+		make_column("viewsCount", &ChannelTopPost::viewsCount),
+		make_column("textSnippet", &ChannelTopPost::textSnippet),
+		make_column("mediaType", &ChannelTopPost::mediaType),
+		make_column("reactionsJson", &ChannelTopPost::reactionsJson),
+		make_column("scanTime", &ChannelTopPost::scanTime),
+		make_column("groupedId", &ChannelTopPost::groupedId)
 	)
 );
 
@@ -230,28 +271,33 @@ void moveCurrentDatabase() {
 }
 
 void initialize() {
-	std::lock_guard lock(databaseMutex);
-	try {
-		storage.sync_schema(true);
+	{
+		std::lock_guard lock(databaseMutex);
+		try {
+			storage.sync_schema(true);
 
-		runMigrations(storage);
+			runMigrations(storage);
 
-		storage.sync_schema(true);
-	} catch (const std::exception &ex) {
-		LOG(("Database initialization failed: %1").arg(ex.what()));
-		moveCurrentDatabase();
+			storage.sync_schema(true);
+		} catch (const std::exception &ex) {
+			LOG(("Database initialization failed: %1").arg(ex.what()));
+			moveCurrentDatabase();
 
-		storage.sync_schema(true);
-		if (!storage.get_pointer<SchemaVersion>(1)) {
-			storage.insert(SchemaVersion{1, 0});
+			storage.sync_schema(true);
+			if (!storage.get_pointer<SchemaVersion>(1)) {
+				storage.insert(SchemaVersion{1, 0});
+			}
+		}
+
+		try {
+			storage.open_forever();
+		} catch (const std::exception &ex) {
+			LOG(("Failed to keep database open: %1").arg(ex.what()));
 		}
 	}
 
-	try {
-		storage.open_forever();
-	} catch (const std::exception &ex) {
-		LOG(("Failed to keep database open: %1").arg(ex.what()));
-	}
+	pruneExpiredChannelPosts();
+	evictLruChannels();
 }
 
 void addEditedMessage(const EditedMessage &message) {
@@ -624,6 +670,316 @@ bool hasPerDialogFilters() {
 	} catch (std::exception &ex) {
 		LOG(("Failed to check if there's any filters: %1").arg(ex.what()));
 		return false;
+	}
+}
+
+namespace {
+
+template<typename WhereExpr, typename OrderExpr>
+std::vector<ChannelTopPost> queryTopPosts(
+	WhereExpr &&whereClause,
+	OrderExpr &&orderClause,
+	int totalLimit,
+	int offset) {
+	if (offset > 0) {
+		return storage.get_all<ChannelTopPost>(
+			where(std::forward<WhereExpr>(whereClause)),
+			std::forward<OrderExpr>(orderClause),
+			limit(totalLimit, sqlite_orm::offset(offset))
+		);
+	}
+	return storage.get_all<ChannelTopPost>(
+		where(std::forward<WhereExpr>(whereClause)),
+		std::forward<OrderExpr>(orderClause),
+		limit(totalLimit)
+	);
+}
+
+} // namespace
+
+void saveChannelPosts(const std::vector<ChannelTopPost> &posts) {
+	if (posts.empty()) {
+		return;
+	}
+	std::lock_guard lock(databaseMutex);
+	try {
+		storage.begin_transaction();
+		for (auto post : posts) {
+			const auto existingIds = storage.select(
+				&ChannelTopPost::id,
+				where(
+					column<ChannelTopPost>(&ChannelTopPost::channelId) == post.channelId
+					&& column<ChannelTopPost>(&ChannelTopPost::messageId) == post.messageId
+				),
+				limit(1)
+			);
+			if (!existingIds.empty()) {
+				post.id = existingIds.front();
+				storage.update(post);
+			} else {
+				storage.insert(post);
+			}
+		}
+		storage.commit();
+		evictLruChannelsLocked(30);
+	} catch (const std::exception &ex) {
+		try {
+			storage.rollback();
+		} catch (...) {
+		}
+		LOG(("Failed to save channel top posts: %1").arg(ex.what()));
+	}
+}
+
+void saveChannelPost(const ChannelTopPost &post) {
+	saveChannelPosts({ post });
+}
+
+void truncateChannelPosts(ID channelId, int maxCount) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		if (maxCount <= 0) {
+			storage.remove_all<ChannelTopPost>(
+				where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
+			);
+			return;
+		}
+		const auto allIds = storage.select(
+			&ChannelTopPost::id,
+			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId),
+			multi_order_by(
+				order_by(column<ChannelTopPost>(&ChannelTopPost::reactionsCount)).desc(),
+				order_by(column<ChannelTopPost>(&ChannelTopPost::commentsCount)).desc(),
+				order_by(column<ChannelTopPost>(&ChannelTopPost::viewsCount)).desc(),
+				order_by(column<ChannelTopPost>(&ChannelTopPost::date)).desc()
+			)
+		);
+		if (static_cast<int>(allIds.size()) > maxCount) {
+			storage.begin_transaction();
+			const auto idsToDelete = std::vector<ID>(
+				allIds.begin() + maxCount,
+				allIds.end());
+			for (size_t i = 0; i < idsToDelete.size(); i += 300) {
+				const auto end = std::min(i + 300, idsToDelete.size());
+				const auto chunk = std::vector<ID>(
+					idsToDelete.begin() + i,
+					idsToDelete.begin() + end);
+				storage.remove_all<ChannelTopPost>(
+					where(in(&ChannelTopPost::id, chunk))
+				);
+			}
+			storage.commit();
+		}
+	} catch (const std::exception &ex) {
+		try {
+			storage.rollback();
+		} catch (...) {
+		}
+		LOG(("Failed to truncate channel top posts: %1").arg(ex.what()));
+	}
+}
+
+void pruneExpiredChannelPosts(int maxAgeSeconds) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		const auto cutoff = base::unixtime::now() - maxAgeSeconds;
+		storage.remove_all<ChannelTopPost>(
+			where(column<ChannelTopPost>(&ChannelTopPost::scanTime) < cutoff)
+		);
+	} catch (const std::exception &ex) {
+		LOG(("Failed to prune expired channel top posts: %1").arg(ex.what()));
+	}
+}
+
+void evictLruChannelsLocked(int maxChannels) {
+	auto rows = storage.select(
+		columns(&ChannelTopPost::channelId, max(&ChannelTopPost::scanTime)),
+		group_by(&ChannelTopPost::channelId)
+	);
+	if (static_cast<int>(rows.size()) <= maxChannels) {
+		return;
+	}
+
+	std::sort(rows.begin(), rows.end(), [](const auto &a, const auto &b) {
+		const auto timeA = std::get<1>(a) ? *std::get<1>(a) : 0;
+		const auto timeB = std::get<1>(b) ? *std::get<1>(b) : 0;
+		return timeA > timeB;
+	});
+
+	std::vector<ID> channelsToEvict;
+	channelsToEvict.reserve(rows.size() - maxChannels);
+	for (auto i = static_cast<size_t>(maxChannels); i < rows.size(); ++i) {
+		channelsToEvict.push_back(std::get<0>(rows[i]));
+	}
+
+	storage.begin_transaction();
+	for (const auto channelId : channelsToEvict) {
+		storage.remove_all<ChannelTopPost>(
+			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
+		);
+	}
+	storage.commit();
+}
+
+void evictLruChannels(int maxChannels) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		evictLruChannelsLocked(maxChannels);
+	} catch (const std::exception &ex) {
+		try {
+			storage.rollback();
+		} catch (...) {
+		}
+		LOG(("Failed to evict LRU channel top posts: %1").arg(ex.what()));
+	}
+}
+
+void clearChannelPosts(ID channelId) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		storage.remove_all<ChannelTopPost>(
+			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
+		);
+	} catch (const std::exception &ex) {
+		LOG(("Failed to clear channel top posts: %1").arg(ex.what()));
+	}
+}
+
+void clearAllChannelPosts() {
+	std::lock_guard lock(databaseMutex);
+	try {
+		storage.remove_all<ChannelTopPost>();
+	} catch (const std::exception &ex) {
+		LOG(("Failed to clear all channel top posts: %1").arg(ex.what()));
+	}
+}
+
+void removePost(ID channelId, int messageId) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		storage.remove_all<ChannelTopPost>(
+			where(
+				column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId
+				&& column<ChannelTopPost>(&ChannelTopPost::messageId) == messageId
+			)
+		);
+	} catch (const std::exception &ex) {
+		LOG(("Failed to remove channel top post: %1").arg(ex.what()));
+	}
+}
+
+std::vector<ChannelTopPost> getChannelTopPosts(
+	ID channelId,
+	TopPostsSortOrder sortOrder,
+	TopPostsFilter filter,
+	int totalLimit,
+	int offset) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		const auto isDoc = (column<ChannelTopPost>(&ChannelTopPost::mediaType)
+			== static_cast<int>(TopPostMediaType::Document));
+		const auto isMedia = (
+			column<ChannelTopPost>(&ChannelTopPost::mediaType) == static_cast<int>(TopPostMediaType::Photo)
+			|| column<ChannelTopPost>(&ChannelTopPost::mediaType) == static_cast<int>(TopPostMediaType::Video)
+			|| column<ChannelTopPost>(&ChannelTopPost::mediaType) == static_cast<int>(TopPostMediaType::Grouped)
+		);
+		const auto baseWhere = (column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId);
+
+		auto executeQuery = [&](auto whereClause) -> std::vector<ChannelTopPost> {
+			if (sortOrder == TopPostsSortOrder::Reactions) {
+				return queryTopPosts(
+					whereClause,
+					multi_order_by(
+						order_by(column<ChannelTopPost>(&ChannelTopPost::reactionsCount)).desc(),
+						order_by(column<ChannelTopPost>(&ChannelTopPost::commentsCount)).desc(),
+						order_by(column<ChannelTopPost>(&ChannelTopPost::viewsCount)).desc(),
+						order_by(column<ChannelTopPost>(&ChannelTopPost::date)).desc()
+					),
+					totalLimit,
+					offset
+				);
+			} else if (sortOrder == TopPostsSortOrder::Comments) {
+				return queryTopPosts(
+					whereClause,
+					multi_order_by(
+						order_by(column<ChannelTopPost>(&ChannelTopPost::commentsCount)).desc(),
+						order_by(column<ChannelTopPost>(&ChannelTopPost::reactionsCount)).desc(),
+						order_by(column<ChannelTopPost>(&ChannelTopPost::viewsCount)).desc(),
+						order_by(column<ChannelTopPost>(&ChannelTopPost::date)).desc()
+					),
+					totalLimit,
+					offset
+				);
+			} else {
+				return queryTopPosts(
+					whereClause,
+					multi_order_by(
+						order_by(column<ChannelTopPost>(&ChannelTopPost::viewsCount)).desc(),
+						order_by(column<ChannelTopPost>(&ChannelTopPost::reactionsCount)).desc(),
+						order_by(column<ChannelTopPost>(&ChannelTopPost::commentsCount)).desc(),
+						order_by(column<ChannelTopPost>(&ChannelTopPost::date)).desc()
+					),
+					totalLimit,
+					offset
+				);
+			}
+		};
+
+		if (filter == TopPostsFilter::Documents) {
+			return executeQuery(baseWhere and isDoc);
+		} else if (filter == TopPostsFilter::Media) {
+			return executeQuery(baseWhere and isMedia);
+		} else {
+			return executeQuery(baseWhere);
+		}
+	} catch (const std::exception &ex) {
+		LOG(("Failed to get channel top posts: %1").arg(ex.what()));
+		return {};
+	}
+}
+
+bool hasChannelTopPosts(ID channelId) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		return !storage.select(
+			columns(column<ChannelTopPost>(&ChannelTopPost::id)),
+			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId),
+			limit(1)
+		).empty();
+	} catch (const std::exception &ex) {
+		LOG(("Failed to check if channel has top posts: %1").arg(ex.what()));
+		return false;
+	}
+}
+
+int getChannelTopPostsCount(ID channelId) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		return static_cast<int>(storage.count<ChannelTopPost>(
+			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
+		));
+	} catch (const std::exception &ex) {
+		LOG(("Failed to get channel top posts count: %1").arg(ex.what()));
+		return 0;
+	}
+}
+
+std::vector<int> getChannelTopPostMessageIds(ID channelId) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		return storage.select(
+			&ChannelTopPost::messageId,
+			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId),
+			multi_order_by(
+				order_by(column<ChannelTopPost>(&ChannelTopPost::reactionsCount)).desc(),
+				order_by(column<ChannelTopPost>(&ChannelTopPost::commentsCount)).desc(),
+				order_by(column<ChannelTopPost>(&ChannelTopPost::viewsCount)).desc(),
+				order_by(column<ChannelTopPost>(&ChannelTopPost::date)).desc()
+			)
+		);
+	} catch (const std::exception &ex) {
+		LOG(("Failed to get channel top post message ids: %1").arg(ex.what()));
+		return {};
 	}
 }
 

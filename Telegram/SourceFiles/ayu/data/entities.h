@@ -135,3 +135,50 @@ public:
 	int messageId;
 	int entityCreateDate;
 };
+
+enum class TopPostMediaType : int {
+	None = 0,
+	Photo = 1,
+	Video = 2,
+	Document = 3,
+	Grouped = 4,
+};
+
+class ChannelTopPost
+{
+public:
+	ID id = 0;
+	ID channelId = 0;
+	int messageId = 0;
+	int date = 0;
+	int reactionsCount = 0;
+	int commentsCount = 0;
+	int viewsCount = 0;
+	std::string textSnippet;
+	int mediaType = 0;
+	std::string reactionsJson;
+	int scanTime = 0;
+	ID groupedId = 0;
+
+	[[nodiscard]] TopPostMediaType type() const {
+		return static_cast<TopPostMediaType>(mediaType);
+	}
+	void setType(TopPostMediaType t) {
+		mediaType = static_cast<int>(t);
+	}
+
+	bool operator==(const ChannelTopPost &other) const {
+		return channelId == other.channelId
+			&& messageId == other.messageId
+			&& date == other.date
+			&& reactionsCount == other.reactionsCount
+			&& commentsCount == other.commentsCount
+			&& viewsCount == other.viewsCount
+			&& textSnippet == other.textSnippet
+			&& mediaType == other.mediaType
+			&& reactionsJson == other.reactionsJson
+			&& scanTime == other.scanTime
+			&& groupedId == other.groupedId;
+	}
+
+};
