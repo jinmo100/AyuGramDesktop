@@ -7,6 +7,7 @@ description: "Build AyuGram Desktop locally on Windows with MSVC v14.44 and all 
 
 Complete the authorized native Windows Debug build through a fresh exit code, successful link log, and verified executable. A detached process or completed dependency stage is progress, not completion. Keep build writes under `E:\TBuild`; inspect existing artifacts before rebuilding dependencies.
 
+For GitHub portable test releases or failed-upload recovery, load [release-windows-ayugram](../release-windows-ayugram/SKILL.md); this skill owns dependency and compilation recovery. Prefer PowerShell 7 (`pwsh.exe`) for Windows orchestration and WSL launch commands; use Windows PowerShell 5.1 only for an evidenced compatibility requirement or when PowerShell 7 is unavailable.
 ## 1. Architecture & Storage Isolation
 
 Telegram / AyuGram Desktop is a heavy C++ project. Full compilation requires 50+ third-party static libraries (Qt 5.15, WebRTC, FFmpeg, OpenSSL, etc.) taking ~60GB of intermediate objects and debug symbols.

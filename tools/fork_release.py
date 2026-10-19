@@ -239,11 +239,11 @@ def make_assets(repo, tag, manifest, artifact, staging):
         readme = (f"AyuGram-Jinmo {tag}: Windows x64 Debug test build\n"
                   f"Source: https://github.com/{REPO}/tree/{manifest['source_sha']}\n"
                   f"Manual releases: {RELEASES_URL}\nAuto updates disabled.\n"
-                  "Keep the empty TelegramForcePortable directory next to AyuGram.exe.\n"
+                  "Keep the TelegramForcePortable directory next to AyuGram.exe.\n"
                   + "\n".join("Validated: " + x for x in GATES) + "\n"
                   + "\n".join("Limitation: " + x for x in LIMITATIONS) + "\n")
         contents = {"AyuGram.exe": artifact.read_bytes(), "LICENSE": license_path.read_bytes(),
-                    "README.txt": readme.encode(), "TelegramForcePortable/": b""}
+                    "README.txt": readme.encode(), "TelegramForcePortable/.keep": b""}
         zip_path = root / f"AyuGram-Jinmo-{tag}.zip"
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
             for name, content in sorted(contents.items()):

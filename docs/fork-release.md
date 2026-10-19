@@ -24,6 +24,7 @@ App 需要此仓库的 Contents、Pull requests 和 Workflows 写权限。若分
 
 ## 本机发布
 
+Agent 执行新发布、草稿恢复或资产核验时，加载项目 skill [release-windows-ayugram](../.agents/skills/release-windows-ayugram/SKILL.md)。Windows 编排优先 PowerShell 7（`pwsh.exe`）；实际发布门禁由现有脚本执行。
 需要在原生 Windows 环境安装 Git、GitHub CLI、Python 3.10+，并已有 E 盘 MSVC、Qt 和配置好的构建目录。先用原生 Windows 的 `gh auth login` 登录；WSL 的登录与 Windows 的登录相互独立。GitHub CLI 的凭据保存在其配置/系统凭据存储，不在源码内。
 
 把发布源码推送到本 fork 的 `dev`，在 `E:\TBuild\tdesktop` 检出要发布的提交并匹配子模块。源码和子模块必须干净。Windows 源码副本中的临时修改也需要先审查处理；发布命令不会提交、丢弃、重置或自动切换你的工作区。
@@ -31,7 +32,7 @@ App 需要此仓库的 Contents、Pull requests 和 Workflows 写权限。若分
 从原生 PowerShell 执行：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File E:\TBuild\tdesktop\tools\release-windows.ps1 `
+pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File E:\TBuild\tdesktop\tools\release-windows.ps1 `
   -Repo E:\TBuild\tdesktop `
   -SourceSha <完整提交SHA>
 ```
@@ -49,7 +50,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File E:\TBuild\tdesktop\tools\rel
 上传使用草稿暂存，所有资产 SHA-256 与远端一致后才公开。失败时记录草稿版本，使用原版本重试：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File E:\TBuild\tdesktop\tools\release-windows.ps1 `
+pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File E:\TBuild\tdesktop\tools\release-windows.ps1 `
   -Repo E:\TBuild\tdesktop -SourceSha <同一完整提交SHA> `
   -Tag v7.2.9-jinmo.1 -Resume
 ```
@@ -60,7 +61,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File E:\TBuild\tdesktop\tools\rel
 
 ## 发布包与验证范围
 
-公开资产为便携 ZIP、`SHA256SUMS` 和 `build-info.json`。ZIP 只包含 `AyuGram.exe`、许可证、说明和空的 `TelegramForcePortable`。不包含账号 `tdata`、缓存、日志或 PDB。对应源码链接、SHA、Debug 配置、验证范围和工具版本写入发布信息。Debug 的大小与启动依赖仍需在目标机器验证；已检查当前配置使用静态 Debug CRT，未用干净 Windows 机器证明全部第三方运行依赖。
+公开资产为便携 ZIP、`SHA256SUMS` 和 `build-info.json`。ZIP 只包含 `AyuGram.exe`、许可证、说明，以及带 `.keep` 的 `TelegramForcePortable`（`.keep` 让空目录在任何解压器下都保留，Scoop 的便携数据持久化依赖该目录存在）。不包含账号 `tdata`、缓存、日志或 PDB。对应源码链接、SHA、Debug 配置、验证范围和工具版本写入发布信息。Debug 的大小与启动依赖仍需在目标机器验证；已检查当前配置使用静态 Debug CRT，未用干净 Windows 机器证明全部第三方运行依赖。
 
 程序内保留 AyuGram 名称和图标。此发布配置禁用内置更新器，关于页的版本链接与“下载测试版”入口指向本 fork 的 Releases。每次升级前退出程序，保留自己的便携数据，仅替换程序文件。
 

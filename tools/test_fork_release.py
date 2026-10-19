@@ -338,7 +338,8 @@ class ReleaseTests(unittest.TestCase):
             with zipfile.ZipFile(assets[0]) as z:
                 prefix = f'AyuGram-Jinmo-{self.tag}/'
                 self.assertEqual(set(z.namelist()), {prefix + n for n in
-                    ('AyuGram.exe', 'LICENSE', 'README.txt', 'TelegramForcePortable/')})
+                    ('AyuGram.exe', 'LICENSE', 'README.txt', 'TelegramForcePortable/.keep')})
+                self.assertEqual(z.read(prefix + 'TelegramForcePortable/.keep'), b'')
                 self.assertEqual(z.read(prefix + 'AyuGram.exe'), self.exe.read_bytes())
                 self.assertTrue(all(i.date_time == (1980, 1, 1, 0, 0, 0) for i in z.infolist()))
             os.utime(self.exe, None)
