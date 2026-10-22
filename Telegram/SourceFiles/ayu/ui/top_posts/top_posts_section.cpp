@@ -6,6 +6,7 @@
 // Copyright @Radolyn, 2026
 #include "ayu/ui/top_posts/top_posts_section.h"
 
+#include "ayu/ayu_settings.h"
 #include "ayu/ui/top_posts/top_posts_inner.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "lang_auto.h"
@@ -20,6 +21,8 @@
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
 #include "window/window_session_controller.h"
+#include <algorithm>
+
 #include <QtGui/QPainter>
 
 #include "styles/style_ayu_styles.h"
@@ -37,6 +40,23 @@ namespace {
 		return channel->discussionLink() != nullptr;
 	}
 	return false;
+}
+
+[[nodiscard]] QString SortLabel(AyuDatabase::TopPostsSortOrder order) {
+	using Order = AyuDatabase::TopPostsSortOrder;
+	switch (order) {
+	case Order::Reactions:
+		return u"🔥 "_q + tr::ayu_TopPostsSortReactions(tr::now);
+	case Order::Positive:
+		return u"👍 "_q + tr::ayu_TopPostsSortPositive(tr::now);
+	case Order::Negative:
+		return u"👎 "_q + tr::ayu_TopPostsSortNegative(tr::now);
+	case Order::Comments:
+		return u"💬 "_q + tr::ayu_TopPostsSortComments(tr::now);
+	case Order::Views:
+		return u"👁 "_q + tr::ayu_TopPostsSortViews(tr::now);
+	}
+	return QString();
 }
 
 } // namespace
@@ -59,6 +79,9 @@ public:
 
 	void showBanner(const QString &text, bool canCancel);
 	void hideBanner();
+	void setState(
+		AyuDatabase::TopPostsSortOrder sort,
+		AyuDatabase::TopPostsFilter filter);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -66,6 +89,7 @@ protected:
 
 private:
 	void showActionMenu();
+	void showSortMenu();
 	void setupSortButtons();
 	void setupFilterButtons();
 	void setupBanner();
@@ -79,9 +103,8 @@ private:
 	object_ptr<Ui::IconButton> _menuToggle;
 	base::unique_qptr<Ui::PopupMenu> _actionMenu;
 
-	object_ptr<Ui::FlatButton> _reactionsSort;
-	object_ptr<Ui::FlatButton> _commentsSort;
-	object_ptr<Ui::FlatButton> _viewsSort;
+	object_ptr<Ui::FlatButton> _sortToggle;
+	base::unique_qptr<Ui::PopupMenu> _sortMenu;
 
 	object_ptr<Ui::FlatButton> _allFilter;
 	object_ptr<Ui::FlatButton> _docsFilter;
@@ -148,9 +171,7 @@ FixedBar::FixedBar(
 , _hasDiscussion(HasDiscussionGroup(peer))
 , _backButton(this)
 , _menuToggle(this, st::topBarMenuToggle)
-, _reactionsSort(this, u"🔥 "_q + tr::ayu_TopPostsSortReactions(tr::now), st::topPostsTabButton)
-, _commentsSort(this, u"💬 "_q + tr::ayu_TopPostsSortComments(tr::now), st::topPostsTabButton)
-, _viewsSort(this, u"👁 "_q + tr::ayu_TopPostsSortViews(tr::now), st::topPostsTabButton)
+, _sortToggle(this, QString(), st::topPostsTabButton)
 , _allFilter(this, tr::ayu_TopPostsFilterAll(tr::now), st::topPostsTabButton)
 , _docsFilter(this, tr::ayu_TopPostsFilterDocs(tr::now), st::topPostsTabButton)
 , _mediaFilter(this, tr::ayu_TopPostsFilterMedia(tr::now), st::topPostsTabButton)
@@ -174,34 +195,47 @@ FixedBar::FixedBar(
 }
 
 void FixedBar::setupSortButtons() {
-	_reactionsSort->setClickedCallback([=] {
-		if (_sortOrder != AyuDatabase::TopPostsSortOrder::Reactions) {
-			_sortOrder = AyuDatabase::TopPostsSortOrder::Reactions;
-			updateButtonsState();
-			_sortChanged.fire_copy(_sortOrder);
-		}
+	_sortToggle->setClickedCallback([=] {
+		showSortMenu();
 	});
+}
 
-	_commentsSort->setClickedCallback([=] {
-		if (_hasDiscussion && _sortOrder != AyuDatabase::TopPostsSortOrder::Comments) {
-			_sortOrder = AyuDatabase::TopPostsSortOrder::Comments;
-			updateButtonsState();
-			_sortChanged.fire_copy(_sortOrder);
-		}
-	});
+void FixedBar::showSortMenu() {
+	using Order = AyuDatabase::TopPostsSortOrder;
+	_sortMenu = base::make_unique_q<Ui::PopupMenu>(
+		_sortToggle.data(),
+		st::defaultPopupMenu);
+	const auto add = [&](Order order, bool enabled) {
+		auto action = _sortMenu->addAction(QString(), [=] {
+			if (_sortOrder != order) {
+				_sortOrder = order;
+				updateButtonsState();
+				_sortChanged.fire_copy(_sortOrder);
+			}
+		});
+		action->setText(SortLabel(order));
+		action->setCheckable(true);
+		action->setChecked(_sortOrder == order);
+		action->setEnabled(enabled);
+	};
+	add(Order::Reactions, true);
+	add(Order::Positive, true);
+	add(Order::Negative, true);
+	add(Order::Comments, _hasDiscussion);
+	add(Order::Views, true);
+	_sortMenu->setForcedOrigin(Ui::PanelAnimation::Origin::TopLeft);
+	_sortMenu->popup(_sortToggle->mapToGlobal(QPoint(0, _sortToggle->height())));
+}
 
-	if (!_hasDiscussion) {
-		_commentsSort->setEnabled(false);
-		_commentsSort->setToolTip(tr::ayu_TopPostsNoDiscussionTooltip(tr::now));
+void FixedBar::setState(
+		AyuDatabase::TopPostsSortOrder sort,
+		AyuDatabase::TopPostsFilter filter) {
+	if (_sortOrder == sort && _filter == filter) {
+		return;
 	}
-
-	_viewsSort->setClickedCallback([=] {
-		if (_sortOrder != AyuDatabase::TopPostsSortOrder::Views) {
-			_sortOrder = AyuDatabase::TopPostsSortOrder::Views;
-			updateButtonsState();
-			_sortChanged.fire_copy(_sortOrder);
-		}
-	});
+	_sortOrder = sort;
+	_filter = filter;
+	updateButtonsState();
 }
 
 void FixedBar::setupFilterButtons() {
@@ -251,6 +285,7 @@ void FixedBar::setupBanner() {
 }
 
 void FixedBar::updateButtonsState() {
+	_sortToggle->setText(SortLabel(_sortOrder));
 	update();
 }
 
@@ -305,15 +340,13 @@ int FixedBar::resizeGetHeight(int newWidth) {
 
 	const auto row2Top = st::topBarHeight;
 	const auto halfWidth = (newWidth - 4 * st::topPostsTabMargin) / 2;
-	const auto sortBtnWidth = (halfWidth - 2 * st::topPostsTabMargin) / 3;
 	const auto filterBtnWidth = (halfWidth - 2 * st::topPostsTabMargin) / 3;
 
-	auto sortX = st::topPostsTabMargin;
-	_reactionsSort->setGeometry(sortX, row2Top, sortBtnWidth, st::topPostsTabHeight);
-	sortX += sortBtnWidth + st::topPostsTabMargin;
-	_commentsSort->setGeometry(sortX, row2Top, sortBtnWidth, st::topPostsTabHeight);
-	sortX += sortBtnWidth + st::topPostsTabMargin;
-	_viewsSort->setGeometry(sortX, row2Top, sortBtnWidth, st::topPostsTabHeight);
+	_sortToggle->setGeometry(
+		st::topPostsTabMargin,
+		row2Top,
+		halfWidth - st::topPostsTabMargin,
+		st::topPostsTabHeight);
 
 	auto filterX = halfWidth + 2 * st::topPostsTabMargin;
 	_allFilter->setGeometry(filterX, row2Top, filterBtnWidth, st::topPostsTabHeight);
@@ -357,6 +390,24 @@ SectionWidget::SectionWidget(
 	_fixedBarShadow->raise();
 	_scroll->show();
 
+	const auto channelId = getBareID(peer);
+	const auto state = AyuDatabase::getChannelTopPostState(channelId);
+	if (state.sortOrder >= 0
+		&& state.sortOrder <= static_cast<int>(AyuDatabase::TopPostsSortOrder::Negative)) {
+		_sortOrder = static_cast<AyuDatabase::TopPostsSortOrder>(state.sortOrder);
+	}
+	if (state.filter >= 0
+		&& state.filter <= static_cast<int>(AyuDatabase::TopPostsFilter::Media)) {
+		_filter = static_cast<AyuDatabase::TopPostsFilter>(state.filter);
+	}
+	if (_sortOrder == AyuDatabase::TopPostsSortOrder::Comments
+		&& !HasDiscussionGroup(peer)) {
+		_sortOrder = AyuDatabase::TopPostsSortOrder::Reactions;
+	}
+	saveViewState();
+	_fixedBar->setState(_sortOrder, _filter);
+	AyuDatabase::touchChannelTopPostAccess(channelId);
+
 	setupControls();
 	loadPosts();
 }
@@ -399,6 +450,7 @@ void SectionWidget::setupControls() {
 		if (_inner) {
 			_inner->setSortOrder(sortOrder);
 		}
+		saveViewState();
 		loadPosts();
 	}, lifetime());
 
@@ -408,6 +460,7 @@ void SectionWidget::setupControls() {
 		if (_inner) {
 			_inner->setFilter(filter);
 		}
+		saveViewState();
 		loadPosts();
 	}, lifetime());
 
@@ -489,6 +542,8 @@ void SectionWidget::setInternalState(
 	Ui::SendPendingMoveResizeEvents(this);
 	_sortOrder = memento->sortOrder();
 	_filter = memento->filter();
+	_fixedBar->setState(_sortOrder, _filter);
+	AyuDatabase::touchChannelTopPostAccess(getBareID(_peer));
 	loadPosts();
 	_scroll->scrollToY(memento->getScrollTop());
 }
@@ -550,12 +605,28 @@ void SectionWidget::resizeEvent(QResizeEvent *e) {
 
 void SectionWidget::loadPosts() {
 	const auto channelId = getBareID(_peer);
+	auto lists = AyuDatabase::TopPostsReactionLists();
+	const auto &topPosts = AyuSettings::getInstance().topPostsSettings();
+	for (const auto &key : topPosts.positiveReactions().split(u' ', Qt::SkipEmptyParts)) {
+		lists.positive.push_back(key);
+	}
+	for (const auto &key : topPosts.negativeReactions().split(u' ', Qt::SkipEmptyParts)) {
+		lists.negative.push_back(key);
+	}
 	auto posts = AyuDatabase::getChannelTopPosts(
 		channelId,
 		_sortOrder,
-		_filter);
+		_filter,
+		300,
+		0,
+		lists);
 
-	if (posts.empty() && !AyuDatabase::hasChannelTopPosts(channelId) && !_initialScanAttempted) {
+	const auto scannedBefore = AyuDatabase::getChannelTopPostState(
+		channelId).oldestScannedId > 0;
+	if (posts.empty()
+		&& !scannedBefore
+		&& !AyuDatabase::hasChannelTopPosts(channelId)
+		&& !_initialScanAttempted) {
 		_initialScanAttempted = true;
 		if (_inner) {
 			_inner->setEmptyMessage(tr::ayu_TopPostsEmptyInitial(tr::now));
@@ -586,8 +657,19 @@ void SectionWidget::startScan(int scanWindow) {
 	if (_scanner) {
 		return;
 	}
+	const auto channelId = getBareID(_peer);
+	const auto state = AyuDatabase::getChannelTopPostState(channelId);
+	const auto target = std::max(scanWindow, 1);
+	const auto resuming = (state.oldestScannedId > 0 && target > state.scanWindow);
+	const auto resumeOffset = resuming ? state.oldestScannedId : 0;
+	const auto alreadyScanned = resuming ? state.scanWindow : 0;
+
 	_fixedBar->showBanner(tr::ayu_TopPostsScanning(tr::now), true);
-	_scanner = std::make_unique<Scanner>(_peer, scanWindow, _filter);
+	_scanner = std::make_unique<Scanner>(
+		_peer,
+		target,
+		MsgId(resumeOffset),
+		alreadyScanned);
 	_scanner->progress(
 	) | rpl::on_next([=](const ScanProgress &p) {
 		handleScanProgress(p);
@@ -658,7 +740,7 @@ void SectionWidget::startSync() {
 		return;
 	}
 	_fixedBar->showBanner(tr::ayu_TopPostsSyncing(tr::now), true);
-	_syncController = std::make_unique<IncrementalSyncController>(_peer, _filter);
+	_syncController = std::make_unique<IncrementalSyncController>(_peer);
 	_syncController->progress(
 	) | rpl::on_next([=](const SyncProgress &p) {
 		handleSyncProgress(p);
@@ -738,6 +820,15 @@ void SectionWidget::clearCache() {
 		_inner->setEmptyMessage(tr::ayu_TopPostsCacheCleared(tr::now));
 		_inner->setPosts({});
 	}
+}
+
+void SectionWidget::saveViewState() {
+	const auto channelId = getBareID(_peer);
+	auto state = AyuDatabase::getChannelTopPostState(channelId);
+	state.channelId = channelId;
+	state.sortOrder = static_cast<int>(_sortOrder);
+	state.filter = static_cast<int>(_filter);
+	AyuDatabase::saveChannelTopPostState(state);
 }
 
 SectionMemento::SectionMemento(

@@ -16,10 +16,18 @@ _Avoid_: Batch messages, message bundle, cluster
 The bounded slice of historical channel messages (e.g. 500, 1000) requested from the server to protect against rate limits.
 _Avoid_: Crawl depth, fetch limit, scan range
 
-**Reaction Engagement**:
-The unweighted total sum of all emoji reactions on a message or media group, treating all reaction types as valid engagement.
-_Avoid_: Likes, upvotes, positive score
+**Reaction Total**:
+The unweighted sum of every reaction on a message or media group, whatever the emoji expresses; a reaction in neither classification list counts here and nowhere else.
+_Avoid_: Reaction engagement, likes, upvotes, score
+
+**Positive Reaction**:
+A reaction whose emoji the user's positive list classifies as a sign of approval. A post carries its own count, ranked separately from the Reaction Total.
+_Avoid_: Good reaction, like, upvote, quality score
+
+**Negative Reaction**:
+A reaction whose emoji the user's negative list classifies as a sign of derision or rejection. It is deliberately never subtracted from anything: the two counts stay independent so a heavily mixed post cannot pass for a clean one.
+_Avoid_: Bad reaction, dislike, downvote, net score
 
 **Incremental Sync**:
-The synchronization cycle that fetches newly published messages while refreshing the engagement counters of existing cached top posts.
+The synchronization cycle that fetches newly published messages while refreshing the reaction, comment and view counters of existing cached top posts.
 _Avoid_: Quick refresh, partial reload, delta poll

@@ -41,9 +41,7 @@ struct SyncProgress {
 
 class IncrementalSyncController final : public base::has_weak_ptr {
 public:
-	IncrementalSyncController(
-		not_null<PeerData*> peer,
-		AyuDatabase::TopPostsFilter filter = AyuDatabase::TopPostsFilter::All);
+	explicit IncrementalSyncController(not_null<PeerData*> peer);
 	~IncrementalSyncController();
 
 	void start();
@@ -51,7 +49,6 @@ public:
 
 	[[nodiscard]] not_null<PeerData*> peer() const;
 	[[nodiscard]] ID channelId() const;
-	[[nodiscard]] AyuDatabase::TopPostsFilter filter() const;
 
 	[[nodiscard]] SyncProgress progressValue() const;
 	[[nodiscard]] rpl::producer<SyncProgress> progress() const;
@@ -73,7 +70,6 @@ private:
 
 	const not_null<PeerData*> _peer;
 	const ID _channelId = 0;
-	const AyuDatabase::TopPostsFilter _filter = AyuDatabase::TopPostsFilter::All;
 
 	MTP::Sender _api;
 	mtpRequestId _requestId = 0;

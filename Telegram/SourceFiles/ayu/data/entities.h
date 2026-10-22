@@ -187,3 +187,26 @@ public:
 	}
 
 };
+
+class ChannelTopPostState
+{
+public:
+	ID channelId = 0;
+	int sortOrder = 0;
+	int filter = 0;
+	int scanWindow = 0;
+	int oldestScannedId = 0;
+	int lastScanTime = 0;
+	int lastAccessTime = 0;
+
+	bool operator==(const ChannelTopPostState &other) const {
+		return channelId == other.channelId
+			&& sortOrder == other.sortOrder
+			&& filter == other.filter
+			&& scanWindow == other.scanWindow
+			&& oldestScannedId == other.oldestScannedId
+			&& lastScanTime == other.lastScanTime
+			&& lastAccessTime == other.lastAccessTime;
+	}
+
+};

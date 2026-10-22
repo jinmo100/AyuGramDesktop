@@ -73,6 +73,7 @@ protected:
 private:
 	void setupControls();
 	void loadPosts();
+	void saveViewState();
 	void startScan(int scanWindow = kDefaultScanWindow);
 	void cancelScan();
 	void startSync();

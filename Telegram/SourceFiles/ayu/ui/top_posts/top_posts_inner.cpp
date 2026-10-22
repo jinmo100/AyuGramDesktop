@@ -13,6 +13,7 @@
 #include "window/window_session_controller.h"
 #include "lang_auto.h"
 #include <QtCore/QDateTime>
+#include <QtCore/QLocale>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QPainter>
 
@@ -73,20 +74,18 @@ struct MediaTypeMetadata {
 		int groupedCount = 1) {
 	switch (type) {
 	case TopPostMediaType::Photo:
-		return { u"[Photo]"_q, u"🖼"_q };
+		return { tr::ayu_TopPostsMediaPhoto(tr::now), u"🖼"_q };
 	case TopPostMediaType::Video:
-		return { u"[Video]"_q, u"🎬"_q };
+		return { tr::ayu_TopPostsMediaVideo(tr::now), u"🎬"_q };
 	case TopPostMediaType::Document:
-		return { u"[Document]"_q, u"📄"_q };
-	case TopPostMediaType::Grouped: {
-		const auto placeholder = (groupedCount > 1)
-			? u"[Album / Media Set (%1)]"_q.arg(groupedCount)
-			: u"[Album / Media Set]"_q;
-		return { placeholder, u"📚"_q };
-	}
+		return { tr::ayu_TopPostsMediaDocument(tr::now), u"📄"_q };
+	case TopPostMediaType::Grouped:
+		return {
+			tr::ayu_TopPostsMediaAlbum(tr::now, lt_count, groupedCount),
+			u"📚"_q };
 	case TopPostMediaType::None:
 	default:
-		return { u"[Message]"_q, u"💬"_q };
+		return { tr::ayu_TopPostsMediaMessage(tr::now), u"💬"_q };
 	}
 }
 
@@ -267,7 +266,9 @@ void InnerWidget::paintCard(
 	const auto icon = MediaIconSymbol(post.type());
 	p.drawText(thumbRect, Qt::AlignCenter, icon);
 
-	const auto dateText = QDateTime::fromSecsSinceEpoch(post.date).toString(u"MMM d, yyyy"_q);
+	const auto dateText = QLocale().toString(
+		QDateTime::fromSecsSinceEpoch(post.date),
+		u"d MMM yyyy"_q);
 	p.setFont(st::normalFont);
 	p.setPen(st::windowSubTextFg);
 	const auto dateWidth = p.fontMetrics().horizontalAdvance(dateText);

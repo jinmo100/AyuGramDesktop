@@ -21,11 +21,9 @@
 namespace TopPosts {
 
 IncrementalSyncController::IncrementalSyncController(
-	not_null<PeerData*> peer,
-	AyuDatabase::TopPostsFilter filter)
+	not_null<PeerData*> peer)
 : _peer(peer)
 , _channelId(getBareID(peer))
-, _filter(filter)
 , _api(&peer->session().mtp()) {
 	_throttleTimer.setCallback([=] {
 		if (_progress.state == SyncState::SyncingDeltas) {
@@ -105,10 +103,6 @@ ID IncrementalSyncController::channelId() const {
 	return _channelId;
 }
 
-AyuDatabase::TopPostsFilter IncrementalSyncController::filter() const {
-	return _filter;
-}
-
 SyncProgress IncrementalSyncController::progressValue() const {
 	return _progress;
 }
@@ -136,52 +130,22 @@ void IncrementalSyncController::requestNextDeltaBatch() {
 		return;
 	}
 
-	if (_filter == AyuDatabase::TopPostsFilter::All) {
-		_requestId = _api.request(MTPmessages_GetHistory(
-			_peer->input(),
-			MTP_int(_deltaOffsetId.bare),
-			MTP_int(0),
-			MTP_int(0),
-			MTP_int(kBatchSize),
-			MTP_int(0),
-			MTP_int(_highestCachedMessageId),
-			MTP_long(0)
-		)).done([=](const MTPmessages_Messages &result) {
-			_requestId = 0;
-			handleDeltaResponse(result);
-		}).fail([=](const MTP::Error &error) {
-			_requestId = 0;
-			handleError(error);
-		}).send();
-	} else {
-		const auto mtpFilter = (_filter == AyuDatabase::TopPostsFilter::Documents)
-			? MTP_inputMessagesFilterDocument()
-			: MTP_inputMessagesFilterPhotoVideo();
-		_requestId = _api.request(MTPmessages_Search(
-			MTP_flags(0),
-			_peer->input(),
-			MTP_string(),
-			MTP_inputPeerEmpty(),
-			MTPInputPeer(),
-			MTPVector<MTPReaction>(),
-			MTP_int(0),
-			mtpFilter,
-			MTP_int(0),
-			MTP_int(0),
-			MTP_int(_deltaOffsetId.bare),
-			MTP_int(0),
-			MTP_int(kBatchSize),
-			MTP_int(0),
-			MTP_int(_highestCachedMessageId),
-			MTP_long(0)
-		)).done([=](const MTPmessages_Messages &result) {
-			_requestId = 0;
-			handleDeltaResponse(result);
-		}).fail([=](const MTP::Error &error) {
-			_requestId = 0;
-			handleError(error);
-		}).send();
-	}
+	_requestId = _api.request(MTPmessages_GetHistory(
+		_peer->input(),
+		MTP_int(_deltaOffsetId.bare),
+		MTP_int(0),
+		MTP_int(0),
+		MTP_int(kBatchSize),
+		MTP_int(0),
+		MTP_int(_highestCachedMessageId),
+		MTP_long(0)
+	)).done([=](const MTPmessages_Messages &result) {
+		_requestId = 0;
+		handleDeltaResponse(result);
+	}).fail([=](const MTP::Error &error) {
+		_requestId = 0;
+		handleError(error);
+	}).send();
 }
 
 void IncrementalSyncController::handleDeltaResponse(

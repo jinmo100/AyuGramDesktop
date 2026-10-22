@@ -354,6 +354,34 @@ void from_json(const nlohmann::json &j, MessageShotSettings &s) {
 	s._cloudThemeAccountId = j.value("cloudThemeAccountId", uint64(0));
 }
 
+void TopPostsSettings::setPositiveReactions(const QString &val) {
+	if (_positiveReactions.current() == val) return;
+	_positiveReactions = val;
+	AyuSettings::save();
+}
+
+void TopPostsSettings::setNegativeReactions(const QString &val) {
+	if (_negativeReactions.current() == val) return;
+	_negativeReactions = val;
+	AyuSettings::save();
+}
+
+void to_json(nlohmann::json &j, const TopPostsSettings &s) {
+	j = nlohmann::json{
+		{"positiveReactions", s._positiveReactions.current()},
+		{"negativeReactions", s._negativeReactions.current()},
+	};
+}
+
+void from_json(const nlohmann::json &j, TopPostsSettings &s) {
+	s._positiveReactions = j.value(
+		"positiveReactions",
+		s._positiveReactions.current());
+	s._negativeReactions = j.value(
+		"negativeReactions",
+		s._negativeReactions.current());
+}
+
 AyuSettings::AyuSettings()
 : _appIcon(AyuAssets::DEFAULT_ICON)
 , _editedMark(Core::IsAppLaunched() ? tr::lng_edited(tr::now) : QString("edited")) {
@@ -1165,7 +1193,8 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"avatarCorners", s._avatarCorners.current()},
 		{"singleCornerRadius", s._singleCornerRadius.current()},
 		{"streamerMode", s._streamerMode.current()},
-		{"messageShotSettings", s._messageShotSettings}
+		{"messageShotSettings", s._messageShotSettings},
+		{"topPostsSettings", s._topPostsSettings}
 	};
 }
 
@@ -1272,5 +1301,9 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 
 	if (j.contains("messageShotSettings") && j["messageShotSettings"].is_object()) {
 		j["messageShotSettings"].get_to(s._messageShotSettings);
+	}
+
+	if (j.contains("topPostsSettings") && j["topPostsSettings"].is_object()) {
+		j["topPostsSettings"].get_to(s._topPostsSettings);
 	}
 }

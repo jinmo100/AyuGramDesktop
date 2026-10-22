@@ -237,6 +237,38 @@ private:
 void to_json(nlohmann::json &j, const MessageShotSettings &s);
 void from_json(const nlohmann::json &j, MessageShotSettings &s);
 
+class TopPostsSettings {
+public:
+	[[nodiscard]] const QString &positiveReactions() const {
+		return _positiveReactions.current();
+	}
+	[[nodiscard]] const QString &negativeReactions() const {
+		return _negativeReactions.current();
+	}
+	[[nodiscard]] rpl::producer<QString> positiveReactionsValue() const {
+		return _positiveReactions.value();
+	}
+	[[nodiscard]] rpl::producer<QString> negativeReactionsValue() const {
+		return _negativeReactions.value();
+	}
+
+	void setPositiveReactions(const QString &val);
+	void setNegativeReactions(const QString &val);
+
+	friend void to_json(nlohmann::json &j, const TopPostsSettings &s);
+	friend void from_json(const nlohmann::json &j, TopPostsSettings &s);
+
+private:
+	friend class AyuSettings;
+
+	rpl::variable<QString> _positiveReactions = u"\u2764 \U0001F44D \U0001F525 \U0001F389 \U0001F44F \U0001F4AF \U0001F60D \U0001F970 \U0001F929 \u2728 \u2705 \U0001F64F"_q;
+	rpl::variable<QString> _negativeReactions = u"\U0001F44E \U0001F921 \U0001F4A9 \U0001F92E \U0001F595 \U0001F621 \U0001F92C \U0001F971 \U0001F644"_q;
+
+};
+
+void to_json(nlohmann::json &j, const TopPostsSettings &s);
+void from_json(const nlohmann::json &j, TopPostsSettings &s);
+
 class AyuSettings {
 public:
 	AyuSettings(const AyuSettings &) = delete;
@@ -259,6 +291,8 @@ public:
 
 	[[nodiscard]] MessageShotSettings &messageShotSettings() { return _messageShotSettings; }
 	[[nodiscard]] const MessageShotSettings &messageShotSettings() const { return _messageShotSettings; }
+	[[nodiscard]] TopPostsSettings &topPostsSettings() { return _topPostsSettings; }
+	[[nodiscard]] const TopPostsSettings &topPostsSettings() const { return _topPostsSettings; }
 
 	void addShadowBan(int64 id);
 	void removeShadowBan(int64 id);
@@ -716,6 +750,7 @@ private:
 	std::map<uint64, std::unique_ptr<GhostModeAccountSettings>> _ghostAccounts;
 
 	MessageShotSettings _messageShotSettings;
+	TopPostsSettings _topPostsSettings;
 };
 
 void to_json(nlohmann::json &j, const AyuSettings &s);

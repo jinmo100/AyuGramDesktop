@@ -20,6 +20,8 @@
 #include "history/history_item.h"
 #include "history/history_item_components.h"
 #include "main/main_session.h"
+#include <algorithm>
+
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 
@@ -121,11 +123,13 @@ ChannelTopPost ExtractPostMetrics(
 Scanner::Scanner(
 	not_null<PeerData*> peer,
 	int scanWindow,
-	AyuDatabase::TopPostsFilter filter)
+	MsgId resumeOffset,
+	int alreadyScanned)
 : _peer(peer)
 , _channelId(getBareID(peer))
 , _scanWindow(std::clamp(scanWindow, 1, kMaxScanWindow))
-, _filter(filter)
+, _resumeOffset(resumeOffset)
+, _alreadyScanned(std::max(alreadyScanned, 0))
 , _api(&peer->session().mtp()) {
 	_throttleTimer.setCallback([=] {
 		requestNextBatch();
@@ -144,12 +148,12 @@ void Scanner::start() {
 	if (_progress.state == ScanState::Scanning) {
 		return;
 	}
-	_scannedCount = 0;
+	_scannedCount = _alreadyScanned;
 	_matchedCount = 0;
-	_offsetId = 0;
+	_offsetId = _resumeOffset;
 	_allParsedPosts.clear();
 	_aggregator.reset();
-	_progress.scannedCount = 0;
+	_progress.scannedCount = _scannedCount;
 	_progress.matchedCount = 0;
 	_progress.targetCount = _scanWindow;
 	_progress.state = ScanState::Scanning;
@@ -199,8 +203,8 @@ int Scanner::scanWindow() const {
 	return _scanWindow;
 }
 
-AyuDatabase::TopPostsFilter Scanner::filter() const {
-	return _filter;
+MsgId Scanner::resumeOffset() const {
+	return _resumeOffset;
 }
 
 ScanProgress Scanner::progressValue() const {
@@ -239,52 +243,22 @@ void Scanner::requestNextBatch() {
 	const auto remaining = _scanWindow - _scannedCount;
 	const auto batchLimit = std::clamp(remaining, 1, kBatchSize);
 
-	if (_filter == AyuDatabase::TopPostsFilter::All) {
-		_requestId = _api.request(MTPmessages_GetHistory(
-			_peer->input(),
-			MTP_int(_offsetId.bare),
-			MTP_int(0),
-			MTP_int(0),
-			MTP_int(batchLimit),
-			MTP_int(0),
-			MTP_int(0),
-			MTP_long(0)
-		)).done([=](const MTPmessages_Messages &result) {
-			_requestId = 0;
-			handleResponse(result);
-		}).fail([=](const MTP::Error &error) {
-			_requestId = 0;
-			handleError(error);
-		}).send();
-	} else {
-		const auto mtpFilter = (_filter == AyuDatabase::TopPostsFilter::Documents)
-			? MTP_inputMessagesFilterDocument()
-			: MTP_inputMessagesFilterPhotoVideo();
-		_requestId = _api.request(MTPmessages_Search(
-			MTP_flags(0),
-			_peer->input(),
-			MTP_string(),
-			MTP_inputPeerEmpty(),
-			MTPInputPeer(),
-			MTPVector<MTPReaction>(),
-			MTP_int(0),
-			mtpFilter,
-			MTP_int(0),
-			MTP_int(0),
-			MTP_int(_offsetId.bare),
-			MTP_int(0),
-			MTP_int(batchLimit),
-			MTP_int(0),
-			MTP_int(0),
-			MTP_long(0)
-		)).done([=](const MTPmessages_Messages &result) {
-			_requestId = 0;
-			handleResponse(result);
-		}).fail([=](const MTP::Error &error) {
-			_requestId = 0;
-			handleError(error);
-		}).send();
-	}
+	_requestId = _api.request(MTPmessages_GetHistory(
+		_peer->input(),
+		MTP_int(_offsetId.bare),
+		MTP_int(0),
+		MTP_int(0),
+		MTP_int(batchLimit),
+		MTP_int(0),
+		MTP_int(0),
+		MTP_long(0)
+	)).done([=](const MTPmessages_Messages &result) {
+		_requestId = 0;
+		handleResponse(result);
+	}).fail([=](const MTP::Error &error) {
+		_requestId = 0;
+		handleError(error);
+	}).send();
 }
 
 void Scanner::handleResponse(const MTPmessages_Messages &result) {
@@ -420,11 +394,19 @@ void Scanner::finish(ScanState finalState, const QString &error) {
 			_batchParsedStream.fire_copy(flushed);
 		}
 		if (_autoSave) {
-			crl::async([this, posts = flushed, channelId = _channelId, weak = base::make_weak(this), finalState, error] {
+			crl::async([this, posts = flushed, channelId = _channelId, oldest = _offsetId.bare, depth = _scannedCount, weak = base::make_weak(this), finalState, error] {
 				if (!posts.empty()) {
 					AyuDatabase::saveChannelPosts(posts);
 				}
 				AyuDatabase::truncateChannelPosts(channelId, 300);
+				if (oldest > 0) {
+					auto state = AyuDatabase::getChannelTopPostState(channelId);
+					state.channelId = channelId;
+					state.scanWindow = depth;
+					state.oldestScannedId = oldest;
+					state.lastScanTime = base::unixtime::now();
+					AyuDatabase::saveChannelTopPostState(state);
+				}
 				crl::on_main(weak, [=] {
 					_progress.state = finalState;
 					_progress.errorMessage = error;
@@ -435,8 +417,16 @@ void Scanner::finish(ScanState finalState, const QString &error) {
 			return;
 		}
 	} else if (finalState == ScanState::Cancelled && _autoSave) {
-		crl::async([this, channelId = _channelId, weak = base::make_weak(this), finalState, error] {
+		crl::async([this, channelId = _channelId, oldest = _offsetId.bare, depth = _scannedCount, weak = base::make_weak(this), finalState, error] {
 			AyuDatabase::truncateChannelPosts(channelId, 300);
+			if (oldest > 0) {
+				auto state = AyuDatabase::getChannelTopPostState(channelId);
+				state.channelId = channelId;
+				state.scanWindow = depth;
+				state.oldestScannedId = oldest;
+				state.lastScanTime = base::unixtime::now();
+				AyuDatabase::saveChannelTopPostState(state);
+			}
 			crl::on_main(weak, [=] {
 				_progress.state = finalState;
 				_progress.errorMessage = error;

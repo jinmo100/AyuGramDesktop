@@ -10,6 +10,9 @@
 #include "rpl/producer.h"
 
 #include <functional>
+#include <vector>
+
+#include <QtCore/QString>
 
 class SchemaVersion
 {
@@ -61,6 +64,8 @@ enum class TopPostsSortOrder {
 	Reactions,
 	Comments,
 	Views,
+	Positive,
+	Negative,
 };
 
 enum class TopPostsFilter {
@@ -69,12 +74,17 @@ enum class TopPostsFilter {
 	Media,
 };
 
+struct TopPostsReactionLists {
+	std::vector<QString> positive;
+	std::vector<QString> negative;
+};
+
 void saveChannelPosts(const std::vector<ChannelTopPost> &posts);
 void saveChannelPost(const ChannelTopPost &post);
 
 void truncateChannelPosts(ID channelId, int maxCount = 300);
 void pruneExpiredChannelPosts(int maxAgeSeconds = 30 * 86400);
-void evictLruChannels(int maxChannels = 30);
+void evictLruChannels(int maxChannels = 100);
 
 void clearChannelPosts(ID channelId);
 void clearAllChannelPosts();
@@ -83,12 +93,17 @@ void removePosts(ID channelId, const std::vector<int> &messageIds);
 [[nodiscard]] rpl::producer<std::pair<ID, int>> channelPostRemoved();
 [[nodiscard]] rpl::producer<ID> channelPostsCleared();
 
+ChannelTopPostState getChannelTopPostState(ID channelId);
+void saveChannelTopPostState(const ChannelTopPostState &state);
+void touchChannelTopPostAccess(ID channelId);
+
 std::vector<ChannelTopPost> getChannelTopPosts(
 	ID channelId,
 	TopPostsSortOrder sortOrder = TopPostsSortOrder::Reactions,
 	TopPostsFilter filter = TopPostsFilter::All,
 	int totalLimit = 300,
-	int offset = 0);
+	int offset = 0,
+	const TopPostsReactionLists &lists = TopPostsReactionLists());
 bool hasChannelTopPosts(ID channelId);
 int getChannelTopPostsCount(ID channelId);
 std::vector<int> getChannelTopPostMessageIds(ID channelId);

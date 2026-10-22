@@ -26,7 +26,7 @@ Status: implemented
 
 ### 2. 热度提取与多维排序
 从消息体 `HistoryItem` 中一次性提取三项指标（零额外网络请求）：
-- **表情互动量 (Reaction Engagement)**：累加 `MessageReactions` 中所有表情的 `count`（所有表情不论正负均具有收集与热度参考价值，不作倾向性权重过滤）。
+- **表情互动量 (Reaction Engagement)**：累加 `MessageReactions` 中所有表情的 `count`（所有表情不论正负均具有收集与热度参考价值，不作倾向性权重过滤）。**注：后半句已被 `implemented/feature/2026-10-23-top-posts-follow-up.md` 取代**——总数口径与排序保留，但不再是唯一口径，新增了按优质 / 劣质表情的独立排序。
 - **评论讨论数 (Comments)**：读取 `repliesCount()`；若频道未关联讨论组（`repliesAreComments()` 为假），顶部“按评论量”排序按钮保持显示但置灰，鼠标悬停展示明确提示。
 - **浏览量 (Views)**：读取 `viewsCount()`。
 - **媒体合集聚合 (Media Group)**：对具备相同 `grouped_id` 的连续消息（如相册或分卷附件）聚合成单张卡片，汇总展示文件总量，点击卡片定位至合集首条消息。

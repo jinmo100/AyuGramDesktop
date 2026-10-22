@@ -12,7 +12,12 @@
 #include "crl/crl_on_main.h"
 #include "rpl/event_stream.h"
 
+#include <algorithm>
+#include <map>
 #include <mutex>
+
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 
 using namespace sqlite_orm;
 
@@ -190,6 +195,16 @@ auto storage = make_storage(
 		make_column("scanTime", &ChannelTopPost::scanTime),
 		make_column("groupedId", &ChannelTopPost::groupedId),
 		make_column("groupedCount", &ChannelTopPost::groupedCount)
+	),
+	make_table<ChannelTopPostState>(
+		"ChannelTopPostState",
+		make_column("channelId", &ChannelTopPostState::channelId, primary_key()),
+		make_column("sortOrder", &ChannelTopPostState::sortOrder),
+		make_column("filter", &ChannelTopPostState::filter),
+		make_column("scanWindow", &ChannelTopPostState::scanWindow),
+		make_column("oldestScannedId", &ChannelTopPostState::oldestScannedId),
+		make_column("lastScanTime", &ChannelTopPostState::lastScanTime),
+		make_column("lastAccessTime", &ChannelTopPostState::lastAccessTime)
 	)
 );
 
@@ -205,13 +220,25 @@ void migrateToV1(decltype(storage) &storage) {
 	}
 }
 
+void migrateToV2(decltype(storage) &storage) {
+	// WHY: v1 scanned under the selected filter only, so its rows are partial.
+	try {
+		storage.remove_all<ChannelTopPost>();
+		storage.remove_all<ChannelTopPostState>();
+		LOG(("Migration to V2 successful."));
+	} catch (const std::exception &ex) {
+		LOG(("Migration to V2 failed: %1").arg(ex.what()));
+	}
+}
+
 }
 
 void runMigrations(decltype(storage) &storage) {
-	constexpr int kLatestVersion = 1;
+	constexpr int kLatestVersion = 2;
 
 	const std::map<int, Fn<void(decltype(storage) &)>> migrations = {
 		{1, AyuMigrations::migrateToV1},
+		{2, AyuMigrations::migrateToV2},
 	};
 
 	int currentVersion = 0;
@@ -687,10 +714,21 @@ void evictLruChannelsLocked(int maxChannels) {
 		return;
 	}
 
-	std::sort(rows.begin(), rows.end(), [](const auto &a, const auto &b) {
-		const auto timeA = std::get<1>(a) ? *std::get<1>(a) : 0;
-		const auto timeB = std::get<1>(b) ? *std::get<1>(b) : 0;
-		return timeA > timeB;
+	std::map<ID, int> lastAccess;
+	for (const auto &row : storage.select(
+			columns(
+				&ChannelTopPostState::channelId,
+				&ChannelTopPostState::lastAccessTime))) {
+		lastAccess.emplace(std::get<0>(row), std::get<1>(row));
+	}
+	const auto visited = [&](ID channelId, int scanTime) {
+		const auto i = lastAccess.find(channelId);
+		return (i != lastAccess.end()) ? std::max(i->second, scanTime) : scanTime;
+	};
+
+	std::sort(rows.begin(), rows.end(), [&](const auto &a, const auto &b) {
+		return visited(std::get<0>(a), std::get<1>(a) ? *std::get<1>(a) : 0)
+			> visited(std::get<0>(b), std::get<1>(b) ? *std::get<1>(b) : 0);
 	});
 
 	std::vector<ID> channelsToEvict;
@@ -703,6 +741,9 @@ void evictLruChannelsLocked(int maxChannels) {
 	for (const auto channelId : channelsToEvict) {
 		storage.remove_all<ChannelTopPost>(
 			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
+		);
+		storage.remove_all<ChannelTopPostState>(
+			where(column<ChannelTopPostState>(&ChannelTopPostState::channelId) == channelId)
 		);
 	}
 	storage.commit();
@@ -754,7 +795,7 @@ void saveChannelPosts(const std::vector<ChannelTopPost> &posts) {
 			}
 		}
 		storage.commit();
-		evictLruChannelsLocked(30);
+		evictLruChannelsLocked(100);
 	} catch (const std::exception &ex) {
 		try {
 			storage.rollback();
@@ -816,10 +857,49 @@ void pruneExpiredChannelPosts(int maxAgeSeconds) {
 	std::lock_guard lock(databaseMutex);
 	try {
 		const auto cutoff = base::unixtime::now() - maxAgeSeconds;
-		storage.remove_all<ChannelTopPost>(
-			where(column<ChannelTopPost>(&ChannelTopPost::scanTime) < cutoff)
-		);
+		std::map<ID, int> lastAccess;
+		for (const auto &row : storage.select(
+				columns(
+					&ChannelTopPostState::channelId,
+					&ChannelTopPostState::lastAccessTime))) {
+			lastAccess.emplace(std::get<0>(row), std::get<1>(row));
+		}
+
+		std::vector<ID> expired;
+		for (const auto &row : storage.select(
+				columns(
+					&ChannelTopPost::channelId,
+					max(&ChannelTopPost::scanTime)),
+				group_by(&ChannelTopPost::channelId))) {
+			const auto channelId = std::get<0>(row);
+			const auto scanned = std::get<1>(row) ? *std::get<1>(row) : 0;
+			const auto i = lastAccess.find(channelId);
+			const auto seen = (i != lastAccess.end())
+				? std::max(i->second, scanned)
+				: scanned;
+			if (seen < cutoff) {
+				expired.push_back(channelId);
+			}
+		}
+		if (expired.empty()) {
+			return;
+		}
+
+		storage.begin_transaction();
+		for (const auto channelId : expired) {
+			storage.remove_all<ChannelTopPost>(
+				where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
+			);
+			storage.remove_all<ChannelTopPostState>(
+				where(column<ChannelTopPostState>(&ChannelTopPostState::channelId) == channelId)
+			);
+		}
+		storage.commit();
 	} catch (const std::exception &ex) {
+		try {
+			storage.rollback();
+		} catch (...) {
+		}
 		LOG(("Failed to prune expired channel top posts: %1").arg(ex.what()));
 	}
 }
@@ -854,6 +934,14 @@ void clearChannelPosts(ID channelId) {
 		storage.remove_all<ChannelTopPost>(
 			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
 		);
+		storage.update_all(
+			set(
+				c(&ChannelTopPostState::scanWindow) = 0,
+				c(&ChannelTopPostState::oldestScannedId) = 0,
+				c(&ChannelTopPostState::lastScanTime) = 0
+			),
+			where(column<ChannelTopPostState>(&ChannelTopPostState::channelId) == channelId)
+		);
 		crl::on_main([=] {
 			channelPostsClearedStream.fire_copy(channelId);
 		});
@@ -866,6 +954,10 @@ void clearAllChannelPosts() {
 	std::lock_guard lock(databaseMutex);
 	try {
 		storage.remove_all<ChannelTopPost>();
+		storage.update_all(set(
+			c(&ChannelTopPostState::scanWindow) = 0,
+			c(&ChannelTopPostState::oldestScannedId) = 0,
+			c(&ChannelTopPostState::lastScanTime) = 0));
 		crl::on_main([=] {
 			channelPostsClearedStream.fire(0);
 		});
@@ -909,12 +1001,38 @@ void removePost(ID channelId, int messageId) {
 	removePosts(channelId, { messageId });
 }
 
+namespace {
+
+int CountReactionQuality(
+		const std::string &json,
+		const std::vector<QString> &keys) {
+	if (keys.empty() || json.empty()) {
+		return 0;
+	}
+	auto error = QJsonParseError();
+	const auto document = QJsonDocument::fromJson(
+		QByteArray::fromStdString(json),
+		&error);
+	if (error.error != QJsonParseError::NoError || !document.isObject()) {
+		return 0;
+	}
+	const auto object = document.object();
+	auto result = 0;
+	for (const auto &key : keys) {
+		result += object.value(key).toInt();
+	}
+	return result;
+}
+
+} // namespace
+
 std::vector<ChannelTopPost> getChannelTopPosts(
 	ID channelId,
 	TopPostsSortOrder sortOrder,
 	TopPostsFilter filter,
 	int totalLimit,
-	int offset) {
+	int offset,
+	const TopPostsReactionLists &lists) {
 	std::lock_guard lock(databaseMutex);
 	try {
 		const auto isDoc = (column<ChannelTopPost>(&ChannelTopPost::mediaType)
@@ -951,7 +1069,7 @@ std::vector<ChannelTopPost> getChannelTopPosts(
 					totalLimit,
 					offset
 				);
-			} else {
+			} else if (sortOrder == TopPostsSortOrder::Views) {
 				return queryTopPosts(
 					whereClause,
 					multi_order_by(
@@ -964,6 +1082,42 @@ std::vector<ChannelTopPost> getChannelTopPosts(
 					offset
 				);
 			}
+			const auto &keys = (sortOrder == TopPostsSortOrder::Negative)
+				? lists.negative
+				: lists.positive;
+			auto scored = std::vector<std::pair<int, ChannelTopPost>>();
+			for (auto &post : storage.get_all<ChannelTopPost>(where(whereClause))) {
+				scored.emplace_back(
+					CountReactionQuality(post.reactionsJson, keys),
+					std::move(post));
+			}
+			std::sort(scored.begin(), scored.end(), [](const auto &a, const auto &b) {
+				if (a.first != b.first) {
+					return a.first > b.first;
+				}
+				const auto &left = a.second;
+				const auto &right = b.second;
+				if (left.reactionsCount != right.reactionsCount) {
+					return left.reactionsCount > right.reactionsCount;
+				} else if (left.commentsCount != right.commentsCount) {
+					return left.commentsCount > right.commentsCount;
+				} else if (left.viewsCount != right.viewsCount) {
+					return left.viewsCount > right.viewsCount;
+				}
+				return left.date > right.date;
+			});
+			auto result = std::vector<ChannelTopPost>();
+			const auto from = std::min(
+				static_cast<size_t>(std::max(offset, 0)),
+				scored.size());
+			const auto to = std::min(
+				from + static_cast<size_t>(std::max(totalLimit, 0)),
+				scored.size());
+			result.reserve(to - from);
+			for (auto i = from; i != to; ++i) {
+				result.push_back(std::move(scored[i].second));
+			}
+			return result;
 		};
 
 		if (filter == TopPostsFilter::Documents) {
@@ -1038,6 +1192,53 @@ int getChannelTopPostsMaxMessageId(ID channelId) {
 	} catch (const std::exception &ex) {
 		LOG(("Failed to get channel top post max message id: %1").arg(ex.what()));
 		return 0;
+	}
+}
+
+ChannelTopPostState getChannelTopPostState(ID channelId) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		if (const auto row = storage.get_pointer<ChannelTopPostState>(channelId)) {
+			return *row;
+		}
+	} catch (const std::exception &ex) {
+		LOG(("Failed to get channel top post state: %1").arg(ex.what()));
+	}
+	return ChannelTopPostState{ .channelId = channelId };
+}
+
+void saveChannelTopPostState(const ChannelTopPostState &state) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		storage.replace(state);
+	} catch (const std::exception &ex) {
+		LOG(("Failed to save channel top post state: %1").arg(ex.what()));
+	}
+}
+
+void touchChannelTopPostAccess(ID channelId) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		const auto hasPosts = !storage.select(
+			columns(&ChannelTopPost::id),
+			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId),
+			limit(1)).empty();
+		if (!hasPosts) {
+			return;
+		}
+		const auto now = base::unixtime::now();
+		if (storage.get_pointer<ChannelTopPostState>(channelId)) {
+			storage.update_all(
+				set(c(&ChannelTopPostState::lastAccessTime) = now),
+				where(column<ChannelTopPostState>(&ChannelTopPostState::channelId) == channelId));
+			return;
+		}
+		auto state = ChannelTopPostState();
+		state.channelId = channelId;
+		state.lastAccessTime = now;
+		storage.replace(state);
+	} catch (const std::exception &ex) {
+		LOG(("Failed to touch channel top post access: %1").arg(ex.what()));
 	}
 }
 }
