@@ -391,10 +391,26 @@ SectionWidget::SectionWidget(
 	_fixedBarShadow->raise();
 	_scroll->show();
 
-	AyuDatabase::touchChannelTopPostAccess(getBareID(peer));
+	const auto channelId = getBareID(peer);
+	const auto state = AyuDatabase::getChannelTopPostState(channelId);
+	if (state.sortOrder >= 0
+		&& state.sortOrder <= static_cast<int>(AyuDatabase::TopPostsSortOrder::Negative)) {
+		_sortOrder = static_cast<AyuDatabase::TopPostsSortOrder>(state.sortOrder);
+	}
+	if (state.filter >= 0
+		&& state.filter <= static_cast<int>(AyuDatabase::TopPostsFilter::Media)) {
+		_filter = static_cast<AyuDatabase::TopPostsFilter>(state.filter);
+	}
+	if (_sortOrder == AyuDatabase::TopPostsSortOrder::Comments
+		&& !HasDiscussionGroup(peer)) {
+		_sortOrder = AyuDatabase::TopPostsSortOrder::Reactions;
+	}
+	saveViewState();
 	_fixedBar->setState(_sortOrder, _filter);
+	AyuDatabase::touchChannelTopPostAccess(channelId);
 
 	setupControls();
+	loadPosts();
 }
 
 SectionWidget::~SectionWidget() = default;
@@ -532,13 +548,6 @@ void SectionWidget::setInternalState(
 		not_null<SectionMemento*> memento) {
 	setGeometry(geometry);
 	Ui::SendPendingMoveResizeEvents(this);
-	_sortOrder = memento->sortOrder();
-	_filter = memento->filter();
-	if (_sortOrder == AyuDatabase::TopPostsSortOrder::Comments
-		&& !HasDiscussionGroup(_peer)) {
-		_sortOrder = AyuDatabase::TopPostsSortOrder::Reactions;
-	}
-	saveViewState();
 	_fixedBar->setState(_sortOrder, _filter);
 	AyuDatabase::touchChannelTopPostAccess(getBareID(_peer));
 	loadPosts();

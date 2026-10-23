@@ -12,7 +12,6 @@
 #include "api/api_sending.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_state.h"
-#include "ayu/data/ayu_database.h"
 #include "ayu/data/messages_storage.h"
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/forward/ayu_forward.h"
@@ -442,11 +441,7 @@ void AddTopPostsAction(PeerData *peerData,
 	addCallback(
 		tr::ayu_TopPostsMenuText(tr::now),
 		[=] {
-			const auto state = AyuDatabase::getChannelTopPostState(getBareID(channel));
-			sessionController->showSection(std::make_shared<TopPosts::SectionMemento>(
-				channel,
-				static_cast<AyuDatabase::TopPostsSortOrder>(state.sortOrder),
-				static_cast<AyuDatabase::TopPostsFilter>(state.filter)));
+			sessionController->showSection(std::make_shared<TopPosts::SectionMemento>(channel));
 		},
 		&st::menuIconGroupReactions);
 }
