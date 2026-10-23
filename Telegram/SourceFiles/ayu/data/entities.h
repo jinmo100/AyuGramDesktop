@@ -160,6 +160,8 @@ public:
 	int mediaType = 0;
 	int scanTime = 0;
 	int groupedCount = 1;
+	int positiveCount = 0;
+	int negativeCount = 0;
 
 	[[nodiscard]] TopPostMediaType type() const {
 		return static_cast<TopPostMediaType>(mediaType);

@@ -12,6 +12,7 @@
 #include "lang_auto.h"
 #include "data/data_channel.h"
 #include "data/data_peer.h"
+#include "data/data_types.h"
 #include "data/data_session.h"
 #include "profile/profile_back_button.h"
 #include "ui/widgets/buttons.h"
@@ -46,15 +47,15 @@ namespace {
 	using Order = AyuDatabase::TopPostsSortOrder;
 	switch (order) {
 	case Order::Reactions:
-		return u"🔥 "_q + tr::ayu_TopPostsSortReactions(tr::now);
+		return u"🔥 "_q + tr::lng_manage_peer_reactions(tr::now);
 	case Order::Positive:
 		return u"👍 "_q + tr::ayu_TopPostsSortPositive(tr::now);
 	case Order::Negative:
 		return u"👎 "_q + tr::ayu_TopPostsSortNegative(tr::now);
 	case Order::Comments:
-		return u"💬 "_q + tr::ayu_TopPostsSortComments(tr::now);
+		return u"💬 "_q + tr::lng_comments_header_none(tr::now);
 	case Order::Views:
-		return u"👁 "_q + tr::ayu_TopPostsSortViews(tr::now);
+		return u"👁 "_q + tr::lng_stats_overview_message_views(tr::now);
 	}
 	return QString();
 }
@@ -172,9 +173,9 @@ FixedBar::FixedBar(
 , _backButton(this)
 , _menuToggle(this, st::topBarMenuToggle)
 , _sortToggle(this, QString(), st::topPostsTabButton)
-, _allFilter(this, tr::ayu_TopPostsFilterAll(tr::now), st::topPostsTabButton)
-, _docsFilter(this, tr::ayu_TopPostsFilterDocs(tr::now), st::topPostsTabButton)
-, _mediaFilter(this, tr::ayu_TopPostsFilterMedia(tr::now), st::topPostsTabButton)
+, _allFilter(this, tr::lng_filters_all_short(tr::now), st::topPostsTabButton)
+, _docsFilter(this, tr::lng_media_type_files(tr::now), st::topPostsTabButton)
+, _mediaFilter(this, tr::lng_media_type_media(tr::now), st::topPostsTabButton)
 , _banner(this)
 , _cancelButton(_banner.data(), tr::lng_cancel(tr::now), st::topPostsTabButton) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
@@ -390,26 +391,10 @@ SectionWidget::SectionWidget(
 	_fixedBarShadow->raise();
 	_scroll->show();
 
-	const auto channelId = getBareID(peer);
-	const auto state = AyuDatabase::getChannelTopPostState(channelId);
-	if (state.sortOrder >= 0
-		&& state.sortOrder <= static_cast<int>(AyuDatabase::TopPostsSortOrder::Negative)) {
-		_sortOrder = static_cast<AyuDatabase::TopPostsSortOrder>(state.sortOrder);
-	}
-	if (state.filter >= 0
-		&& state.filter <= static_cast<int>(AyuDatabase::TopPostsFilter::Media)) {
-		_filter = static_cast<AyuDatabase::TopPostsFilter>(state.filter);
-	}
-	if (_sortOrder == AyuDatabase::TopPostsSortOrder::Comments
-		&& !HasDiscussionGroup(peer)) {
-		_sortOrder = AyuDatabase::TopPostsSortOrder::Reactions;
-	}
-	saveViewState();
+	AyuDatabase::touchChannelTopPostAccess(getBareID(peer));
 	_fixedBar->setState(_sortOrder, _filter);
-	AyuDatabase::touchChannelTopPostAccess(channelId);
 
 	setupControls();
-	loadPosts();
 }
 
 SectionWidget::~SectionWidget() = default;
@@ -476,7 +461,14 @@ void SectionWidget::setupControls() {
 
 	_inner->clicks(
 	) | rpl::on_next([=](MsgId msgId) {
-		controller()->showPeerHistory(_peer, Window::SectionShow::Way::Forward, msgId);
+		auto params = Window::SectionShow{
+			Window::SectionShow::Way::Forward,
+		};
+		params.allowDuplicateInStack = true;
+		params.origin = Window::SectionShow::OriginMessage{
+			FullMsgId(_peer->id, msgId),
+		};
+		controller()->showPeerHistory(_peer, params, msgId);
 	}, lifetime());
 
 	AyuDatabase::channelPostRemoved(
@@ -542,6 +534,11 @@ void SectionWidget::setInternalState(
 	Ui::SendPendingMoveResizeEvents(this);
 	_sortOrder = memento->sortOrder();
 	_filter = memento->filter();
+	if (_sortOrder == AyuDatabase::TopPostsSortOrder::Comments
+		&& !HasDiscussionGroup(_peer)) {
+		_sortOrder = AyuDatabase::TopPostsSortOrder::Reactions;
+	}
+	saveViewState();
 	_fixedBar->setState(_sortOrder, _filter);
 	AyuDatabase::touchChannelTopPostAccess(getBareID(_peer));
 	loadPosts();

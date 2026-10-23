@@ -18,3 +18,7 @@ Blocked by: None
 ## Implementation Details
 - 现有键在 `Telegram/Resources/langs/lang.strings:9195-9215`，全部只有英文值；七个语言包（de/en/es/it/ko/nl/pt-BR）尚无 `ayu_` 键，缺失时回落英文属预期。
 - 日期格式化参考 `lang` 里既有的 locale 资产，不要硬编码格式串。
+
+## 二轮返工（2026-10-23 二次验收）
+
+标签改用核心 `lng_*` 键以跟随应用语言；Positive/Negative 与 AyuGram 专有词保持英文（本仓库 `ayu_` 键无译文通道，中文来自云端语言包）。

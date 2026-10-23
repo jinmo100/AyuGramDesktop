@@ -320,6 +320,20 @@ void InnerWidget::paintCard(
 		drawBadge(commentsLabel, st::msgServiceBg, st::msgServiceFg);
 	}
 
+	if (post.positiveCount > 0) {
+		drawBadge(
+			u"👍 "_q + FormatCount(post.positiveCount),
+			st::msgServiceBg,
+			st::msgServiceFg);
+	}
+
+	if (post.negativeCount > 0) {
+		drawBadge(
+			u"👎 "_q + FormatCount(post.negativeCount),
+			st::msgServiceBg,
+			st::windowSubTextFg);
+	}
+
 	if (post.viewsCount > 0) {
 		const auto viewsLabel = u"👁 "_q + FormatCount(post.viewsCount);
 		drawBadge(viewsLabel, st::msgServiceBg, st::windowSubTextFg);

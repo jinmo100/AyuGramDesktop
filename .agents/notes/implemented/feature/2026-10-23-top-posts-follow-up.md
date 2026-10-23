@@ -46,13 +46,14 @@ Status: implemented
 - [ ] 三个排序项都在：总数、优质、劣质；三者在同一批帖上给出不同的前 5 名（用真实频道验证）。（待实测）
 - [x] 未分类表情与付费 ⭐ 只影响"总数"排序，不影响优质/劣质排序。
 - [ ] 打开面板会刷新该频道"最近访问"时间；扫过 40 个频道后，最常打开的那个仍在缓存里。（待实测）
-- [x] 面板内所有文案来自 `lang.strings`，日期随应用语言变化。
+- [x] 面板标签优先复用核心 `lng_*` 键（Reactions/Comments/Views/All/Files/Media），随应用语言变化；AyuGram 专有词（Top Posts、Positive、Negative、菜单项、横幅）仍是 `ayu_` 英文——本仓库没有 `ayu_` 键的译文通道（见下）。
 
 ## Implementation
 
 ### 1. 留驻（票 06）
 
-- 卡片点击保持 `controller()->showPeerHistory(_peer, Window::SectionShow::Way::Forward, msgId)`（`Telegram/SourceFiles/ayu/ui/top_posts/top_posts_section.cpp`）。Forward 会让 `MainWidget::saveSectionInStack` 把榜单 memento 压进 section 栈，返回走 `showBackFromStack()`（聊天顶栏返回键 / Alt+Left）。
+- **一轮的判断是错的**：`Way::Forward` 并不足以让榜单留在栈里。`MainWidget::showHistory`（`Telegram/SourceFiles/mainwidget.cpp:1507-1546`）对 Forward 做"同 peer 去重"：扫栈发现该频道的 `ChatMemento` 已存在就 `pop_back` 到该位置并把 way 改成 Backward，榜单因此被销毁、栈被清空、聊天顶栏也就不出现返回键。
+- 二轮修法照抄上游同类跳转（`Telegram/SourceFiles/history/history_item_helpers.cpp:876-884` 的"跳到某条消息并保留来源"）：点卡时构造 `params.allowDuplicateInStack = true`（字段定义在 `Telegram/SourceFiles/window/window_session_controller.h:218`）并设 `params.origin = OriginMessage{ FullMsgId(_peer->id, msgId) }`，再 `showPeerHistory`。这样榜单 memento 会真的压进栈，聊天顶栏出现返回键，返回走 `showBackFromStack()` 回原位。
 - 回到榜单时 `SectionWidget::showInternal` / `setInternalState` 用 memento 恢复排序、筛选、滚动位置，并触发一次纯本地的 `loadPosts()`（读 SQLite，无网络、不重扫）。
 - 没有另造导航机制：`Window::SectionShow::Way` 只有 Forward/Backward/ClearStack，section 栈本身就是"返回原位"的机制。
 
@@ -117,3 +118,28 @@ Status: implemented
 - **只改 LRU 的时间字段，不动上限**：改动更小。但 30 个频道的上限对"逛多个资源频道"的用法仍然太紧，属于同一次改动里顺手修掉的正确性问题。
 - **保留定向扫描（只抓 Documents/Media）**：省流量，但会让缓存按筛选口径碎片化——切换筛选时本地根本没有另一类数据，正好和"切换筛选零网络"冲突。
 - **面板做成聊天区浮层**：最接近"像搜索一样常驻"的体验，但要动 `Window::SectionWidget` 的宿主模型，超出本轮范围。
+
+## 二轮返工（2026-10-23 二次验收）
+
+真实客户端验收后确认：留驻、记忆、语言三项都没生效。原因是三条判断只做了静态推理，没有一条跑过真机。
+
+### 根因
+
+| 症状 | 根因 | 位置 |
+| --- | --- | --- |
+| 点卡后榜单消失且回不去 | `Way::Forward` 的同 peer 去重会倒带 section 栈，榜单被销毁 | `Telegram/SourceFiles/mainwidget.cpp:1507-1546` |
+| 重开面板回到默认排序 | 入口 `SectionMemento(channel)` 用默认值构造，`createWidget` 里 ctor 从 DB 恢复后紧接 `setInternalState` 用 memento 覆盖 | `Telegram/SourceFiles/ayu/ui/context_menu/context_menu.cpp:441`、`Telegram/SourceFiles/ayu/ui/top_posts/top_posts_section.cpp` 的 ctor 与 `setInternalState` |
+| 面板全英文 | `Telegram/Resources/langs/` 没有 zh-Hans 内置包，中文来自云端语言包；本地新增的 `ayu_*` 键永远拿不到译文 | `Telegram/Resources/langs/` |
+| 劣质表情排序无意义 | 真实频道 300 行缓存里只有 13 个表情键，默认负名单一个都没命中，"按劣质"退化成按总数 | 默认名单 `Telegram/SourceFiles/ayu/ayu_settings.h` |
+
+### 修法
+
+1. 点卡改用上游"保留来源"的写法（`allowDuplicateInStack` + `origin`）。
+2. memento 成为排序/筛选的唯一来源：ctor 只做 touch 与 `setupControls()`，状态全部由 `setInternalState` 应用并把"无讨论组时 Comments 回落 Reactions"也放在那里；菜单入口先用 `getChannelTopPostState` 读出上次的排序/筛选再构造 memento。
+3. 面板标签换成能跟随语言的核心键：`lng_manage_peer_reactions`（Reactions）、`lng_comments_header_none`（Comments）、`lng_stats_overview_message_views`（Views）、`lng_filters_all_short`（All）、`lng_media_type_files`（Files）、`lng_media_type_media`（Media）。Positive/Negative 与 AyuGram 专有词保留 `ayu_` 英文，因为全仓 459 个 `ayu_` 键在七个内置包里译文数为 0，且中文包来自云端、无法覆盖本地新增键。
+4. 默认正名单补 🤣 😂 😁 🙂 👌；卡片上按帖显示 `👍N` / `👎N` 徽标，让"按优质/按劣质"的排序依据可自证；负名单仍只收"嘲讽/否定"类（`CONTEXT.md` 的 `Negative Reaction` 定义就是 derision or rejection，😢 💔 这类悲伤表情只进总数）。
+
+### 教训
+
+- 编译通过不等于功能可用，布局回归通过也不等于交互正确。凡是"行为是否发生"的验收，必须真机跑一遍，并把观测点写进票里。
+- 上游已有的同类交互（从列表跳到消息并保留来源）应当先搜再写，`allowDuplicateInStack` 这类字段就是为此存在的。

@@ -1120,13 +1120,16 @@ std::vector<ChannelTopPost> getChannelTopPosts(
 			return result;
 		};
 
-		if (filter == TopPostsFilter::Documents) {
-			return executeQuery(baseWhere and isDoc);
-		} else if (filter == TopPostsFilter::Media) {
-			return executeQuery(baseWhere and isMedia);
-		} else {
-			return executeQuery(baseWhere);
+		auto posts = (filter == TopPostsFilter::Documents)
+			? executeQuery(baseWhere and isDoc)
+			: (filter == TopPostsFilter::Media)
+			? executeQuery(baseWhere and isMedia)
+			: executeQuery(baseWhere);
+		for (auto &post : posts) {
+			post.positiveCount = CountReactionQuality(post.reactionsJson, lists.positive);
+			post.negativeCount = CountReactionQuality(post.reactionsJson, lists.negative);
 		}
+		return posts;
 	} catch (const std::exception &ex) {
 		LOG(("Failed to get channel top posts: %1").arg(ex.what()));
 		return {};

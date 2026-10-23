@@ -18,3 +18,7 @@ Blocked by: None
 - `Telegram/SourceFiles/ayu/ui/top_posts/top_posts_section.cpp:424-427` 目前直接 `showPeerHistory(..., SectionShow::Way::Forward, msgId)`；`Window::SectionShow::Way` 只有 Forward/Backward/ClearStack（`Telegram/SourceFiles/window/window_session_controller.h:164-168`），没有"留驻"选项，需要在 section 层自己决定栈行为。
 - 滚动位置与列表内容来自 `InnerWidget`（`top_posts_inner.cpp`），返回时不要重建 `InnerWidget`、不要重跑 `loadPosts()`。
 - 回归入口：`.scratch/channel-top-posts/test_ui_and_cards_seams.cpp`、`.scratch/channel-top-posts/test_layout_regression.py`。
+
+## 二轮返工（2026-10-23 二次验收）
+
+点卡时改用 `allowDuplicateInStack = true` + `origin = OriginMessage{FullMsgId}`（上游 `history_item_helpers.cpp:876-884` 的写法），榜单 memento 才会真的留在 section 栈里，聊天顶栏出现返回键。

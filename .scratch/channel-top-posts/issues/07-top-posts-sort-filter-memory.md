@@ -18,3 +18,7 @@ Blocked by: None
 - `AyuSettings`（`Telegram/SourceFiles/ayu/ayu_settings.h`，nlohmann json + `rpl::variable`）目前没有 TopPosts 段；持久化以 channelId 为键的 map。
 - 读取点在 `top_posts_section.cpp:490-491`（memento 恢复），写入点在 `:397-410`（`sortChanged`/`filterChanged`）与退出时。
 - `top_posts_section.cpp:178-200` 的自动回落逻辑（无讨论组回落到 Reactions、有讨论组回落或切到 Comments）也要同步写入记忆。
+
+## 二轮返工（2026-10-23 二次验收）
+
+排序/筛选改由 memento 单一来源：ctor 不再从 DB 抢着恢复，`setInternalState` 应用 memento 并落盘；菜单入口先用 `getChannelTopPostState` 读出上次状态再构造 memento。
