@@ -24,6 +24,8 @@ Status: implemented
 
 同步机器人采用只安装到本 fork 的 GitHub App，以短期安装令牌执行操作，按需授予内容、PR 和工作流写入权限。检查任务与写操作分离，检查执行时不暴露机器人私钥或发布凭据。App 的创建和安装需要维护者完成登录授权步骤，不将密钥写入仓库。
 
+同步冲突转人工后，处置以保留上游意图为先：上游清理掉的 AI 工作流设施（`ai-tdesktop` 任务队列、`perform-task`/`continue`/`process-inbox` 等 skill、`CLAUDE.md`、`GROK.md`、`.github/workflows/canary.yml` 与 Bot API 发布链）一律不再恢复，`AGENTS.md` 只保留仍然生效的自有门禁段落。文档或工具里指向已删除链路的说法与冲突解决同批修正，不留悬空引用。
+
 ### 本机发布
 
 发布操作由项目 skill [release-windows-ayugram](../../../skills/release-windows-ayugram/SKILL.md) 编排，确定性门禁继续以 `tools/release-windows.ps1` 和 `tools/fork_release.py` 为准。Windows 编排优先 PowerShell 7（`pwsh.exe`），只有已证实的兼容性问题才回退 5.1；依赖构建恢复仍委托已有构建 skill。复用稳定发布配置和构建树，减少配置切换造成的大范围重编译。

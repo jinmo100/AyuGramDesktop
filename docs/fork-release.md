@@ -75,4 +75,4 @@ python3 -m unittest discover -s tools -p 'test_fork_*.py'
 AGENT_NOTE_ARCHIVE_BASE_REF=HEAD bash tools/check-fork-sync.sh
 ```
 
-自动化测试使用临时真实 Git 仓库和模拟 GitHub 边界，不会发布真实 Release。仓库的既有 Canary/签名/Telegram 发布链保持独立。
+自动化测试使用临时真实 Git 仓库和模拟 GitHub 边界，不会发布真实 Release。上游的 Canary 签名与 Telegram 发布链已随其 AI 工作流清理一并移除（`9a01e8b53e`），本仓库只剩这一条本机便携测试版发布链。
