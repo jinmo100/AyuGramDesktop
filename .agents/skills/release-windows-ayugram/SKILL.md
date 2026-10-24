@@ -14,7 +14,7 @@ description: "发布 AyuGram-Jinmo 的 Windows x64 便携 Debug 测试版到 jin
 - [ ] 确定本次是新发布、恢复草稿还是只读核验。
 - [ ] 核对完整源码 SHA、E 盘工作区、递归子模块与进程。
 - [ ] 新发布执行原生构建和回归；恢复使用匹配的有效构建证明。
-- [ ] 启动器父进程是 `cmd.exe`，不是从 WSL 起 `Start-Process pwsh`。
+- [ ] 启动器父进程用 `pwsh.exe`，且 `Start-Process` 带 `-NoNewWindow` 或任一输出重定向。
 - [ ] 核验公开状态、精确标签和三项发布资产。
 - [ ] 报告下载链接、校验值、验证范围与工作区状态。
 
@@ -56,32 +56,56 @@ pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File E:\TBuild\tdesktop\too
 
 `$sourceSha` 必须是确定的 40 位提交值。发行号由脚本按源码基础版本选取下一序号；明确指定时传 `-Tag`，格式以当前脚本为准。工具版本仅在与实际配置树一致时传 `-QtVersion`、`-MsvcVersion`。
 
-长任务必须放到独立进程里跑，避免工具超时中断发布：参数写进 E 盘启动器，记录 PID 和开始时间，用本次运行唯一的日志与退出码文件，成功和异常路径都写退出码。父进程用 `cmd.exe`，脚本本身仍由 `pwsh.exe -File` 执行（见下）。查看进程树和本次 `OutputRoot\logs`，每次等待不超过 60 秒并持续报告进度。
+长任务必须放到独立进程里跑，避免工具超时中断发布：参数写进 E 盘启动器，记录 PID 和开始时间，用本次运行唯一的日志与退出码文件，成功和异常路径都写退出码。父进程用 `pwsh.exe`，脚本本身也由 `pwsh.exe -File` 执行；唯一的硬性要求是 `Start-Process` 必须带 `-NoNewWindow` 或输出重定向（见下）。查看进程树和本次 `OutputRoot\logs`，每次等待不超过 60 秒并持续报告进度。
 
-### 启动器：父进程用 cmd，不要从 WSL 起 Start-Process pwsh
+### 启动器：`pwsh` + `Start-Process -NoNewWindow`
 
-从 WSL 经 `Start-Process pwsh.exe` 起的子进程只拿到极简 PATH（实测仅 `C:\Program Files\PowerShell\7` 与 WindowsApps 条目），`git` 直接不可用。手工烘焙完整 PATH、或改从注册表取 `Machine`+`User` PATH，都只让 `git` 与 `python` 找得到，python 里的 `git submodule status` 仍失败——git for Windows 的 shell 子命令拿不到自己的 `usr\bin` 与 `libexec/git-core`：
+环境能不能继承只取决于 `Start-Process` 的写法，和 pwsh 本身无关。父进程 `PATH` 有 57 条时实测：
+
+| `Start-Process` 写法 | 子进程 `PATH` 条数 | `git` |
+| --- | --- | --- |
+| 裸 `-PassThru` | 2 | 找不到 |
+| `-WindowStyle Hidden` | 2 | 找不到 |
+| `-NoNewWindow` | 57 | 找到 |
+| `-RedirectStandardOutput` / `-RedirectStandardError` | 57 | 找到 |
+| `-UseNewEnvironment` | 58 | 找到 |
+
+裸调用的子进程拿到的是合成环境：86 个变量、`SESSIONNAME` 为空，`PATH` 只剩 `C:\Program Files\PowerShell\7` 与 WindowsApps 条目，所以 `git`（在 `E:\Scoop\shims`）直接消失，python 门禁报 `release refused: [WinError 2] 系统找不到指定的文件。`。加 `-NoNewWindow` 或任一输出重定向都会强制走继承路径，`git submodule status --recursive` 一次通过 40 行，`fork_release.py --preflight-only` 退出码 0。
+
+不要手工烘焙 `PATH`：只留 git 的 `mingw64\bin`、`usr\bin` 时，git 的 sh 子命令仍然报
 
 ```text
 git-submodule: line 7: basename: command not found
 git-submodule: line 22: .: git-sh-setup: file not found
 ```
 
-用 `cmd.exe` 作父进程时 PATH 是系统正常值，同一条命令一次通过（40 个递归子模块）。启动器 `E:\TBuild\run-fork-release.cmd`：
+门禁退出码 2 且日志只有一行 `release refused: command failed (1): git`。`PATH` 顺序也不是原因：把 `mingw64\bin` 提到最前、或只留 `mingw64\bin;C:\WINDOWS\system32;C:\WINDOWS`，`git submodule status --recursive` 都返回 0。
 
-```bat
-@echo off
-set "TEMP=E:\TBuild\fork-release\Temp"
-set "TMP=%TEMP%"
-if not exist "E:\TBuild\fork-release\logs" mkdir "E:\TBuild\fork-release\logs"
-del /q "E:\TBuild\fork-release\manual-exit.txt" 2>nul
-"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "E:\TBuild\tdesktop\tools\release-windows.ps1" -Repo "E:\TBuild\tdesktop" -SourceSha "<40 位提交 SHA>" >> "E:\TBuild\fork-release\logs\manual-release.log" 2>&1
-echo %ERRORLEVEL%> "E:\TBuild\fork-release\manual-exit.txt"
+启动器 `E:\TBuild\run-fork-release.ps1`，由 WSL 的 bash 直接起，内部用 `Start-Process -NoNewWindow` 交接给 `release-windows.ps1`：
+
+```powershell
+$args2 = @(
+  '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+  '-File', 'E:\TBuild\tdesktop\tools\release-windows.ps1',
+  '-Repo', 'E:\TBuild\tdesktop',
+  '-SourceSha', '<40 位提交 SHA>'
+)
+$env:TEMP = 'E:\TBuild\fork-release\Temp'
+$env:TMP = $env:TEMP
+New-Item -ItemType Directory -Force 'E:\TBuild\fork-release\logs' | Out-Null
+$exitPath = 'E:\TBuild\fork-release\manual-exit.txt'
+Remove-Item $exitPath -ErrorAction SilentlyContinue
+$p = Start-Process pwsh.exe -ArgumentList $args2 -NoNewWindow `
+  -RedirectStandardOutput 'E:\TBuild\fork-release\logs\manual-release.log' `
+  -RedirectStandardError 'E:\TBuild\fork-release\logs\manual-release.err.log' `
+  -PassThru
+$p.WaitForExit()
+"$($p.ExitCode)" | Out-File $exitPath -Encoding ascii
 ```
 
-从 WSL 启动：`Start-Process cmd.exe -ArgumentList "/d /c E:\TBuild\run-fork-release.cmd" -WindowStyle Hidden -PassThru`。也可让 Bash 直接起 `pwsh.exe -File ...`（不经 `Start-Process`），实测 preflight 能通过，但要用后台任务承接以免工具调用超时。
+从 WSL 起：`"/mnt/c/Program Files/PowerShell/7/pwsh.exe" -File /mnt/e/TBuild/run-fork-release.ps1`——bash 里没有 `pwsh.exe` 这个命令名，必须写全路径。启动器自己几秒内返回，实际发布在那个子进程里继续跑。
 
-`01-python` 退出码 2、步骤日志只有一行 `release refused: command failed (1): git` 时，这是环境问题而不是源码问题：在同一父进程下逐条重跑 preflight 的 git 命令并打印 stderr；同时确认 E 盘副本的 `refs/remotes/origin/dev` 不是过期引用——preflight 会自己 fetch 并校验目标 SHA 是其祖先，提前手动 `git -C E:\TBuild\tdesktop fetch --quiet origin +refs/heads/dev:refs/remotes/origin/dev` 能省掉一次失败。
+`01-python` 退出码 2 时按顺序查三件事：启动器的 `Start-Process` 是否漏了 `-NoNewWindow`／重定向；`git submodule status --recursive` 是否能看到 40 行；E 盘副本的 `refs/remotes/origin/dev` 是否过期——preflight 会自己 fetch 并校验目标 SHA 是其祖先，提前手动 `git -C E:\TBuild\tdesktop fetch --quiet origin +refs/heads/dev:refs/remotes/origin/dev` 能省掉一次失败。
 
 包装器顺序完成源码门禁、MSVC 初始化、配置、Debug 增量构建、实际 Qt 布局回归、构建证明、白名单打包和上传公开。成功必须有本次退出码 0、成功链接日志及匹配的可执行文件哈希；旧 EXE 或旧退出码不足为证。
 
