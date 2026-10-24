@@ -28,7 +28,7 @@ Status: implemented
 
 ### 本机发布
 
-发布操作由项目 skill [release-windows-ayugram](../../../skills/release-windows-ayugram/SKILL.md) 编排，确定性门禁继续以 `tools/release-windows.ps1` 和 `tools/fork_release.py` 为准。Windows 编排优先 PowerShell 7（`pwsh.exe`），只有已证实的兼容性问题才回退 5.1；依赖构建恢复仍委托已有构建 skill。复用稳定发布配置和构建树，减少配置切换造成的大范围重编译。
+发布操作由项目 skill [release-windows-ayugram](../../../skills/release-windows-ayugram/SKILL.md) 编排，确定性门禁继续以 `tools/release-windows.ps1` 和 `tools/fork_release.py` 为准。Windows 编排优先 PowerShell 7（`pwsh.exe`），只有已证实的兼容性问题才回退 5.1；从 WSL 启动时父进程用 `cmd.exe`，因为 `Start-Process pwsh` 的子进程拿不到 git 依赖的 `usr\bin`。依赖构建恢复仍委托已有构建 skill。复用稳定发布配置和构建树，减少配置切换造成的大范围重编译。
 发布命令接收或选定一个已提交并推送的确定提交，复用 E 盘依赖与缓存，重新执行 Windows x64 Debug 增量构建。构建源码或相关子模块存在未提交改动、与指定提交不符时，停止并列出差异，不自动提交、清理或重置。此前的 `prepare.py` 恢复改动已单独纳入版本管理，参见[依赖准备笔记](2026-10-20-windows-prepare-recovery.md)。发布不自动推送尚未推送的功能提交。
 
 发现该构建版本程序仍在运行时，停止并提示维护者退出后重试，不自动关闭。Windows Debug 编译、Qt 布局回归与干净打包校验全部通过，才允许公开发布。实机测试由维护者自行安排，说明中准确标注验证范围。
@@ -62,6 +62,8 @@ Release 草稿等待人工公开的优势是有最后一次人工检查；用户
 本轮通过临时真实 Git 仓库和外部 GitHub CLI 替身验证同步与发布行为，包括冲突、改写历史、目标和来源变化、门禁篡改、脏子模块、未推送或错误提交、静态运行库和工具版本、上传失败、草稿重试、已有公开版本及 tag 归属。轻量门禁包含四组既有逻辑测试、固定依赖的笔记门禁与 actionlint。原生 PowerShell AST 解析和独立失败日志测试通过；独立 CMake 配置脚本验证正确 URL 可用、开启更新器或非法 URL 被拒绝。
 
 首次真实发布 `v7.2.9-jinmo.1` 已通过原生 Windows Debug 构建和六项实际 Qt 布局回归，发布入口退出码为 0；公开三项资产齐全，标签对应选定源码，ZIP 远端 digest 与下载的 SHA256SUMS 一致。该次使用 Windows PowerShell 5.1，后续编排优先 7，但不将历史成功当作 7 的完整实测。静态 Debug CRT（/MTd）已检查，新包的启动、账号流程和干净机器第三方运行依赖仍未验证。
+
+第二轮真实发布 `v7.2.9-jinmo.2`（源码 `1a5fa8d7d4`）暴露的是启动器环境而非发布门禁：从 WSL 用 `Start-Process pwsh.exe` 起的子进程只继承极简 PATH，`git` 不可用；补齐 PATH 或改从注册表取 `Machine`+`User` PATH，都只让 `git` 与 `python` 可执行，python 里的 `git submodule status` 仍因拿不到 `usr\bin` 与 `libexec/git-core` 报 `basename: command not found`。改用 `cmd.exe` 作父进程后第一次通过，Debug 增量构建、六项布局回归、白名单打包、公开 Pre-release 与标签核验全部完成。编排脚本本身仍由 `pwsh.exe -File` 执行，`cmd.exe` 只提供正常的进程环境；结论已写入发布 skill 的启动器小节。
 
 - 同步只改约定分支；无更新不制造空 PR，失败不自动猜测冲突解决方式，确切候选提交通过检查后才能合并。
 - 每份分发包能追溯到已推送的源码提交与构建配置，包含干净的便携目录，不包含测试账号数据。

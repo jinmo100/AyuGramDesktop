@@ -14,6 +14,7 @@ description: "发布 AyuGram-Jinmo 的 Windows x64 便携 Debug 测试版到 jin
 - [ ] 确定本次是新发布、恢复草稿还是只读核验。
 - [ ] 核对完整源码 SHA、E 盘工作区、递归子模块与进程。
 - [ ] 新发布执行原生构建和回归；恢复使用匹配的有效构建证明。
+- [ ] 启动器父进程是 `cmd.exe`，不是从 WSL 起 `Start-Process pwsh`。
 - [ ] 核验公开状态、精确标签和三项发布资产。
 - [ ] 报告下载链接、校验值、验证范围与工作区状态。
 
@@ -55,7 +56,32 @@ pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File E:\TBuild\tdesktop\too
 
 `$sourceSha` 必须是确定的 40 位提交值。发行号由脚本按源码基础版本选取下一序号；明确指定时传 `-Tag`，格式以当前脚本为准。工具版本仅在与实际配置树一致时传 `-QtVersion`、`-MsvcVersion`。
 
-长任务通过原生 `Start-Process pwsh.exe` 启动独立执行脚本，避免工具超时中断发布。将参数放入 E 盘启动器文件，记录 PID、开始时间；使用每次运行唯一的日志和退出码文件，在成功和异常路径都写退出码，异常退出非零。以 `try/catch` 执行包装器，保留错误日志。查看对应进程树和本次 `OutputRoot\logs`，每次等待不超过 60 秒并持续报告进度。
+长任务必须放到独立进程里跑，避免工具超时中断发布：参数写进 E 盘启动器，记录 PID 和开始时间，用本次运行唯一的日志与退出码文件，成功和异常路径都写退出码。父进程用 `cmd.exe`，脚本本身仍由 `pwsh.exe -File` 执行（见下）。查看进程树和本次 `OutputRoot\logs`，每次等待不超过 60 秒并持续报告进度。
+
+### 启动器：父进程用 cmd，不要从 WSL 起 Start-Process pwsh
+
+从 WSL 经 `Start-Process pwsh.exe` 起的子进程只拿到极简 PATH（实测仅 `C:\Program Files\PowerShell\7` 与 WindowsApps 条目），`git` 直接不可用。手工烘焙完整 PATH、或改从注册表取 `Machine`+`User` PATH，都只让 `git` 与 `python` 找得到，python 里的 `git submodule status` 仍失败——git for Windows 的 shell 子命令拿不到自己的 `usr\bin` 与 `libexec/git-core`：
+
+```text
+git-submodule: line 7: basename: command not found
+git-submodule: line 22: .: git-sh-setup: file not found
+```
+
+用 `cmd.exe` 作父进程时 PATH 是系统正常值，同一条命令一次通过（40 个递归子模块）。启动器 `E:\TBuild\run-fork-release.cmd`：
+
+```bat
+@echo off
+set "TEMP=E:\TBuild\fork-release\Temp"
+set "TMP=%TEMP%"
+if not exist "E:\TBuild\fork-release\logs" mkdir "E:\TBuild\fork-release\logs"
+del /q "E:\TBuild\fork-release\manual-exit.txt" 2>nul
+"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "E:\TBuild\tdesktop\tools\release-windows.ps1" -Repo "E:\TBuild\tdesktop" -SourceSha "<40 位提交 SHA>" >> "E:\TBuild\fork-release\logs\manual-release.log" 2>&1
+echo %ERRORLEVEL%> "E:\TBuild\fork-release\manual-exit.txt"
+```
+
+从 WSL 启动：`Start-Process cmd.exe -ArgumentList "/d /c E:\TBuild\run-fork-release.cmd" -WindowStyle Hidden -PassThru`。也可让 Bash 直接起 `pwsh.exe -File ...`（不经 `Start-Process`），实测 preflight 能通过，但要用后台任务承接以免工具调用超时。
+
+`01-python` 退出码 2、步骤日志只有一行 `release refused: command failed (1): git` 时，这是环境问题而不是源码问题：在同一父进程下逐条重跑 preflight 的 git 命令并打印 stderr；同时确认 E 盘副本的 `refs/remotes/origin/dev` 不是过期引用——preflight 会自己 fetch 并校验目标 SHA 是其祖先，提前手动 `git -C E:\TBuild\tdesktop fetch --quiet origin +refs/heads/dev:refs/remotes/origin/dev` 能省掉一次失败。
 
 包装器顺序完成源码门禁、MSVC 初始化、配置、Debug 增量构建、实际 Qt 布局回归、构建证明、白名单打包和上传公开。成功必须有本次退出码 0、成功链接日志及匹配的可执行文件哈希；旧 EXE 或旧退出码不足为证。
 
@@ -84,6 +110,8 @@ gh api "repos/jinmo100/AyuGramDesktop/git/ref/tags/$tag"
 ```
 
 完成标准：`isDraft=false`、`isPrerelease=true`；tag 解析到本次完整源码 SHA（注解标签继续解析）；ZIP、`SHA256SUMS`、`build-info.json` 三项资产齐全。下载两个小元数据文件到 E 盘唯一核验目录，比较源码、版本、构建配置及 ZIP SHA256 与 GitHub 资产 digest；必要时下载 ZIP 重算哈希。
+
+轻量标签的 `object.type` 是 `commit`，其 `object.sha` 直接就是源码提交；注解标签才需再取一层 `git/tags/<sha>` 的 `object.sha`。本次运行的证据同时看日志：`logs/*-03-cmake.log` 要有 `Telegram.vcxproj -> ...\out\Debug\AyuGram.exe`，`logs/*-07-layout_regression.log` 要有六条 `PASS`，`build-info.json` 的 `zip_sha256`、GitHub 资产 `digest` 与下载到的 `SHA256SUMS` 三者一致。
 
 包内仅应有应用、许可证、说明和空 `TelegramForcePortable`；通过发布器白名单验证，不能复制整个 Debug 目录。公开包不含 tdata、账号、缓存、日志或 PDB。最后检查两个源码副本状态。
 
