@@ -90,6 +90,7 @@ $args2 = @(
   '-Repo', 'E:\TBuild\tdesktop',
   '-SourceSha', '<40 位提交 SHA>'
 )
+Set-Location 'E:\TBuild'
 $env:TEMP = 'E:\TBuild\fork-release\Temp'
 $env:TMP = $env:TEMP
 New-Item -ItemType Directory -Force 'E:\TBuild\fork-release\logs' | Out-Null
@@ -103,7 +104,7 @@ $p.WaitForExit()
 "$($p.ExitCode)" | Out-File $exitPath -Encoding ascii
 ```
 
-从 WSL 起：`"/mnt/c/Program Files/PowerShell/7/pwsh.exe" -File /mnt/e/TBuild/run-fork-release.ps1`——bash 里没有 `pwsh.exe` 这个命令名，必须写全路径。启动器自己几秒内返回，实际发布在那个子进程里继续跑。
+从 WSL 起：`"/mnt/c/Program Files/PowerShell/7/pwsh.exe" -File /mnt/e/TBuild/run-fork-release.ps1 -SourceSha <40 位提交 SHA>`——bash 里没有 `pwsh.exe` 这个命令名，必须写全路径。启动器自己几秒内返回，实际发布在那个子进程里继续跑。启动器先把当前位置切到 `E:\TBuild`，否则从 WSL 继承的 UNC 工作目录会让下游 `cmd.exe` 打印 `UNC paths are not supported`（不致命但污染日志）。
 
 `01-python` 退出码 2 时按顺序查三件事：启动器的 `Start-Process` 是否漏了 `-NoNewWindow`／重定向；`git submodule status --recursive` 是否能看到 40 行；E 盘副本的 `refs/remotes/origin/dev` 是否过期——preflight 会自己 fetch 并校验目标 SHA 是其祖先，提前手动 `git -C E:\TBuild\tdesktop fetch --quiet origin +refs/heads/dev:refs/remotes/origin/dev` 能省掉一次失败。
 

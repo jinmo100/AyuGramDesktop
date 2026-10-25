@@ -63,7 +63,7 @@ Release 草稿等待人工公开的优势是有最后一次人工检查；用户
 
 首次真实发布 `v7.2.9-jinmo.1` 已通过原生 Windows Debug 构建和六项实际 Qt 布局回归，发布入口退出码为 0；公开三项资产齐全，标签对应选定源码，ZIP 远端 digest 与下载的 SHA256SUMS 一致。该次使用 Windows PowerShell 5.1，后续编排优先 7，但不将历史成功当作 7 的完整实测。静态 Debug CRT（/MTd）已检查，新包的启动、账号流程和干净机器第三方运行依赖仍未验证。
 
-第二轮真实发布 `v7.2.9-jinmo.2`（源码 `1a5fa8d7d4`）暴露的是启动器环境而非发布门禁：从 WSL 用裸 `Start-Process pwsh.exe` 起的子进程拿到合成环境（86 个变量、`SESSIONNAME` 为空、PATH 只剩 2 条），`git` 不可见；补齐 PATH 只能让 `git` 与 `python` 可执行，python 里的 `git submodule status` 仍报 `basename: command not found`。当时的绕法是改用 `cmd.exe` 作父进程，它一次通过，Debug 增量构建、六项布局回归、白名单打包、公开 Pre-release 与标签核验全部完成。次日逐项复测把根因定死：`Start-Process` 加 `-NoNewWindow` 或任一输出重定向即走继承路径，子进程 PATH 回到 57 条，`fork_release.py --preflight-only` 退出码 0——所以 `cmd.exe` 不是必需，`pwsh` 本身从未出问题。结论已写入发布 skill 的启动器小节。
+第二轮真实发布 `v7.2.9-jinmo.2`（源码 `1a5fa8d7d4`）暴露的是启动器环境而非发布门禁：从 WSL 用裸 `Start-Process pwsh.exe` 起的子进程拿到合成环境（86 个变量、`SESSIONNAME` 为空、PATH 只剩 2 条），`git` 不可见；补齐 PATH 只能让 `git` 与 `python` 可执行，python 里的 `git submodule status` 仍报 `basename: command not found`。当时的绕法是改用 `cmd.exe` 作父进程，它一次通过，Debug 增量构建、六项布局回归、白名单打包、公开 Pre-release 与标签核验全部完成。次日逐项复测把根因定死：`Start-Process` 加 `-NoNewWindow` 或任一输出重定向即走继承路径，子进程 PATH 回到 57 条，`fork_release.py --preflight-only` 退出码 0——所以 `cmd.exe` 不是必需，`pwsh` 本身从未出问题。`v7.2.9-jinmo.3`（源码 `97c1a57be1`）随即用 `pwsh` 启动器整跑一遍：构建、六项布局回归、打包、公开 Pre-release、标签与哈希核验全部通过，退出码 0。结论已写入发布 skill 的启动器小节。
 
 - 同步只改约定分支；无更新不制造空 PR，失败不自动猜测冲突解决方式，确切候选提交通过检查后才能合并。
 - 每份分发包能追溯到已推送的源码提交与构建配置，包含干净的便携目录，不包含测试账号数据。
