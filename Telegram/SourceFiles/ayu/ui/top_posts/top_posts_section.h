@@ -59,6 +59,10 @@ public:
 		const QRect &geometry,
 		not_null<SectionMemento*> memento);
 
+	void setBackHandler(Fn<void()> handler) {
+		_backHandler = std::move(handler);
+	}
+
 	bool floatPlayerHandleWheelEvent(QEvent *e) override;
 	QRect floatPlayerAvailableRect() override;
 
@@ -88,6 +92,7 @@ private:
 	AyuDatabase::TopPostsSortOrder _sortOrder = AyuDatabase::TopPostsSortOrder::Reactions;
 	AyuDatabase::TopPostsFilter _filter = AyuDatabase::TopPostsFilter::All;
 	bool _initialScanAttempted = false;
+	Fn<void()> _backHandler;
 
 	object_ptr<FixedBar> _fixedBar;
 	object_ptr<Ui::PlainShadow> _fixedBarShadow;

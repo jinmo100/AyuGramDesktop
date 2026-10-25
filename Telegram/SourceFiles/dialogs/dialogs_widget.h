@@ -68,6 +68,10 @@ struct SectionShow;
 struct SeparateId;
 } // namespace Window
 
+namespace TopPosts {
+class Column;
+} // namespace TopPosts
+
 namespace Dialogs::Stories {
 class List;
 struct Content;
@@ -113,6 +117,10 @@ public:
 		const Window::SectionShow &params);
 	void setInnerFocus(bool unfocusSearch = false);
 	[[nodiscard]] bool searchHasFocus() const;
+
+	void showTopPosts(not_null<PeerData*> channel);
+	void hideTopPosts();
+	[[nodiscard]] bool topPostsShown() const;
 
 	[[nodiscard]] Data::Forum *openedForum() const;
 
@@ -460,6 +468,7 @@ private:
 	rpl::variable<PeerId> _childListPeerId;
 	std::unique_ptr<Ui::RpWidget> _hideChildListCanvas;
 	std::unique_ptr<Ui::RpWidget> _chatsFilterSlideCanvas;
+	std::unique_ptr<TopPosts::Column> _topPosts;
 
 };
 

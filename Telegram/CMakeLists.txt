@@ -260,6 +260,8 @@ set(ayugram_files
         ayu/features/top_posts/top_posts_scanner.h
         ayu/features/top_posts/top_posts_sync.cpp
         ayu/features/top_posts/top_posts_sync.h
+        ayu/ui/top_posts/top_posts_column.cpp
+        ayu/ui/top_posts/top_posts_column.h
         ayu/ui/top_posts/top_posts_inner.cpp
         ayu/ui/top_posts/top_posts_inner.h
         ayu/ui/top_posts/top_posts_section.cpp

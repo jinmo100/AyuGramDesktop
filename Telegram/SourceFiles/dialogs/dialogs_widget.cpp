@@ -110,6 +110,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/ui/top_posts/top_posts_column.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "base/platform/base_platform_haptic.h"
 
@@ -2716,7 +2717,9 @@ void Widget::checkUpdateStatus() {
 }
 
 void Widget::setInnerFocus(bool unfocusSearch) {
-	if (_childList) {
+	if (_topPosts && _topPosts->shown()) {
+		_topPosts->setInnerFocus();
+	} else if (_childList) {
 		_childList->setInnerFocus();
 	} else if (_subsectionTopBar && _subsectionTopBar->searchSetFocus()) {
 		return;
@@ -2737,6 +2740,26 @@ void Widget::setInnerFocus(bool unfocusSearch) {
 
 bool Widget::searchHasFocus() const {
 	return _searchHasFocus;
+}
+
+void Widget::showTopPosts(not_null<PeerData*> channel) {
+	if (!_topPosts) {
+		_topPosts = std::make_unique<TopPosts::Column>(this, controller());
+		_topPosts->setClosedCallback([=] {
+			setInnerFocus(false);
+		});
+	}
+	_topPosts->showChannel(channel);
+}
+
+void Widget::hideTopPosts() {
+	if (_topPosts) {
+		_topPosts->hideColumn();
+	}
+}
+
+bool Widget::topPostsShown() const {
+	return _topPosts && _topPosts->shown();
 }
 
 Data::Forum *Widget::openedForum() const {
@@ -3074,7 +3097,9 @@ void Widget::slideFinished() {
 }
 
 void Widget::escape() {
-	if (!cancelSearch({ .jumpBackToSearchedChat = true })) {
+	if (_topPosts && _topPosts->shown()) {
+		_topPosts->hideColumn();
+	} else if (!cancelSearch({ .jumpBackToSearchedChat = true })) {
 		if (const auto forum = controller()->shownForum().current()) {
 			const auto id = controller()->windowId();
 			const auto initial = id.forum();

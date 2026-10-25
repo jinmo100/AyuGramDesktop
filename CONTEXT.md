@@ -28,6 +28,18 @@ _Avoid_: Good reaction, like, upvote, quality score
 A reaction whose emoji the user's negative list classifies as a sign of derision or rejection. It is deliberately never subtracted from anything: the two counts stay independent so a heavily mixed post cannot pass for a clean one.
 _Avoid_: Bad reaction, dislike, downvote, net score
 
+**Ranking Mode**:
+The single dimension an ordered list of Top Posts is sorted by — reactions, comments, views, positive reactions, or negative reactions. One mode at a time; switching it re-sorts the same cached set without rescanning.
+_Avoid_: Sort type, order by, ranking method, 维度
+
+**Content Filter**:
+The restriction of a Top Post list to every post, to file-carrying posts only, or to media-carrying posts only. Independent of Ranking Mode: it narrows which posts are listed, never how they are ordered.
+_Avoid_: Media type filter, post kind, category
+
+**Ranking Panel**:
+The left-column surface showing one channel's ordered Top Posts in place of the chat list. It keeps its channel, Ranking Mode, Content Filter and scroll position while the user opens a post or its comments.
+_Avoid_: Top posts window, ranking dialog, side panel
+
 **Incremental Sync**:
 The synchronization cycle that fetches newly published messages while refreshing the reaction, comment and view counters of existing cached top posts.
 _Avoid_: Quick refresh, partial reload, delta poll

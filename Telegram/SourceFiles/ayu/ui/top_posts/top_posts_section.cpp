@@ -421,7 +421,11 @@ void SectionWidget::setupControls() {
 
 	_fixedBar->backRequests(
 	) | rpl::on_next([=] {
-		controller()->showBackFromStack();
+		if (_backHandler) {
+			_backHandler();
+		} else {
+			controller()->showBackFromStack();
+		}
 	}, lifetime());
 
 	_fixedBar->refreshRequests(

@@ -2175,6 +2175,10 @@ bool MainWidget::isThirdSectionShown() const {
 	return _thirdSection != nullptr;
 }
 
+Dialogs::Widget *MainWidget::dialogsWidget() const {
+	return _dialogs.get();
+}
+
 Dialogs::RowDescriptor MainWidget::resolveChatNext(
 		Dialogs::RowDescriptor from) const {
 	return _dialogs ? _dialogs->resolveChatNext(from) : Dialogs::RowDescriptor();
