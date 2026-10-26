@@ -13,8 +13,24 @@ A set of contiguous messages sharing the same `grouped_id` published together as
 _Avoid_: Batch messages, message bundle, cluster
 
 **Scan Window**:
-The bounded slice of historical channel messages (e.g. 500, 1000) requested from the server to protect against rate limits.
+The bounded slice of historical channel messages (e.g. 500, 1000) requested from the server to protect against rate limits; one request's size, not what a channel has actually covered.
 _Avoid_: Crawl depth, fetch limit, scan range
+
+**Coverage**:
+The set of message intervals of a channel that have actually been scanned, each interval counted in messages of that channel. The intervals may be disjoint once a Scan Range is scanned, and they only ever grow: no scan removes history that was already covered. Coverage says nothing about how many Top Posts a scan produced.
+_Avoid_: Loaded count, post count, cache size, 加载条数, scan depth
+
+**Expand Scan**:
+The action that raises a channel's Coverage to a requested depth by scanning only the not-yet-covered older messages. It does nothing when Coverage already meets the request, so repeating it is harmless.
+_Avoid_: Rescan, reload, refresh, force rescan
+
+**Scan Range**:
+A user-chosen pair of publication dates that a scan visits instead of counting messages back from the newest one. It exists because a busy channel's message budget may only reach back a month or two, while the posts worth reading can be a stretch from last year. Scanning a range adds one Coverage interval and resumes from where it stopped if interrupted.
+_Avoid_: Date filter, time filter, custom window, 时间范围
+
+**Range View**:
+The restriction of a Ranking Panel to Top Posts published inside the active Scan Range. It narrows the same cached set and leaves Ranking Mode and Content Filter in force; leaving the range restores the unrestricted list without rescanning.
+_Avoid_: Date filter, ranged list, filtered channel
 
 **Reaction Total**:
 The unweighted sum of every reaction on a message or media group, whatever the emoji expresses; a reaction in neither classification list counts here and nowhere else.

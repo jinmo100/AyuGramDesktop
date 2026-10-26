@@ -153,3 +153,9 @@ topPostsTabButton: FlatButton(historyComposeButton) {
 	height: topPostsTabHeight;
 	textTop: 6px;
 }
+
+topPostsBackButton: IconButton(topBarSearch) {
+	icon: icon{{ "title_back", menuIconFg }};
+	iconOver: icon{{ "title_back", menuIconFgOver }};
+	iconPosition: point(12px, 19px);
+}

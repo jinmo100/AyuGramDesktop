@@ -9,12 +9,14 @@
 #include "ayu/ayu_settings.h"
 #include "ayu/ui/top_posts/top_posts_inner.h"
 #include "ayu/utils/telegram_helpers.h"
+#include "base/unixtime.h"
 #include "lang_auto.h"
 #include "data/data_channel.h"
 #include "data/data_peer.h"
 #include "data/data_types.h"
 #include "data/data_session.h"
-#include "profile/profile_back_button.h"
+#include "ui/boxes/calendar_box.h"
+#include "ui/layers/box_content.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
@@ -24,6 +26,8 @@
 #include "window/window_session_controller.h"
 #include <algorithm>
 
+#include <QtCore/QDate>
+#include <QtCore/QLocale>
 #include <QtGui/QPainter>
 
 #include "styles/style_ayu_styles.h"
@@ -73,6 +77,8 @@ public:
 	[[nodiscard]] rpl::producer<> refreshRequests() const;
 	[[nodiscard]] rpl::producer<int> rescanRequests() const;
 	[[nodiscard]] rpl::producer<> clearCacheRequests() const;
+	[[nodiscard]] rpl::producer<> dateRangeRequests() const;
+	[[nodiscard]] rpl::producer<> clearDateRangeRequests() const;
 	[[nodiscard]] rpl::producer<> cancelRequests() const;
 	[[nodiscard]] rpl::producer<AyuDatabase::TopPostsSortOrder> sortChanged() const;
 	[[nodiscard]] rpl::producer<AyuDatabase::TopPostsFilter> filterChanged() const;
@@ -80,6 +86,7 @@ public:
 
 	void showBanner(const QString &text, bool canCancel);
 	void hideBanner();
+	void setDateRange(TimeId fromDate, TimeId toDate);
 	void setState(
 		AyuDatabase::TopPostsSortOrder sort,
 		AyuDatabase::TopPostsFilter filter);
@@ -100,7 +107,7 @@ private:
 	const not_null<PeerData*> _peer;
 	const bool _hasDiscussion = false;
 
-	object_ptr<Profile::BackButton> _backButton;
+	object_ptr<Ui::IconButton> _backButton;
 	object_ptr<Ui::IconButton> _menuToggle;
 	base::unique_qptr<Ui::PopupMenu> _actionMenu;
 
@@ -113,16 +120,24 @@ private:
 
 	object_ptr<Ui::RpWidget> _banner;
 	object_ptr<Ui::FlatButton> _cancelButton;
+
+	object_ptr<Ui::FlatButton> _rangeChip;
+	bool _rangeActive = false;
+
 	QString _bannerText;
 	bool _bannerVisible = false;
 
 	AyuDatabase::TopPostsSortOrder _sortOrder = AyuDatabase::TopPostsSortOrder::Reactions;
 	AyuDatabase::TopPostsFilter _filter = AyuDatabase::TopPostsFilter::All;
+	TimeId _rangeFrom = 0;
+	TimeId _rangeTo = 0;
 
 	rpl::event_stream<> _backRequests;
 	rpl::event_stream<> _refreshRequests;
 	rpl::event_stream<int> _rescanRequests;
 	rpl::event_stream<> _clearCacheRequests;
+	rpl::event_stream<> _dateRangeRequests;
+	rpl::event_stream<> _clearDateRangeRequests;
 	rpl::event_stream<> _cancelRequests;
 	rpl::event_stream<AyuDatabase::TopPostsSortOrder> _sortChanged;
 	rpl::event_stream<AyuDatabase::TopPostsFilter> _filterChanged;
@@ -144,6 +159,14 @@ rpl::producer<int> FixedBar::rescanRequests() const {
 
 rpl::producer<> FixedBar::clearCacheRequests() const {
 	return _clearCacheRequests.events();
+}
+
+rpl::producer<> FixedBar::dateRangeRequests() const {
+	return _dateRangeRequests.events();
+}
+
+rpl::producer<> FixedBar::clearDateRangeRequests() const {
+	return _clearDateRangeRequests.events();
 }
 
 rpl::producer<> FixedBar::cancelRequests() const {
@@ -170,17 +193,17 @@ FixedBar::FixedBar(
 , _controller(controller)
 , _peer(peer)
 , _hasDiscussion(HasDiscussionGroup(peer))
-, _backButton(this)
+, _backButton(this, st::topPostsBackButton)
 , _menuToggle(this, st::topBarMenuToggle)
 , _sortToggle(this, QString(), st::topPostsTabButton)
 , _allFilter(this, tr::lng_filters_all_short(tr::now), st::topPostsTabButton)
 , _docsFilter(this, tr::lng_media_type_files(tr::now), st::topPostsTabButton)
 , _mediaFilter(this, tr::lng_media_type_media(tr::now), st::topPostsTabButton)
 , _banner(this)
-, _cancelButton(_banner.data(), tr::lng_cancel(tr::now), st::topPostsTabButton) {
+, _cancelButton(_banner.data(), tr::lng_cancel(tr::now), st::topPostsTabButton)
+, _rangeChip(this, QString(), st::topPostsTabButton) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
 
-	_backButton->moveToLeft(0, 0);
 	_backButton->setClickedCallback([=] {
 		_backRequests.fire({});
 	});
@@ -193,6 +216,11 @@ FixedBar::FixedBar(
 	setupFilterButtons();
 	setupBanner();
 	updateButtonsState();
+
+	_rangeChip->hide();
+	_rangeChip->setClickedCallback([=] {
+		_clearDateRangeRequests.fire({});
+	});
 }
 
 void FixedBar::setupSortButtons() {
@@ -310,6 +338,30 @@ void FixedBar::hideBanner() {
 	}
 }
 
+void FixedBar::setDateRange(TimeId fromDate, TimeId toDate) {
+	const auto active = (fromDate > 0) && (toDate > 0);
+	const auto changed = (active != _rangeActive)
+		|| (active && (_rangeFrom != fromDate || _rangeTo != toDate));
+	if (!changed) {
+		return;
+	}
+	_rangeActive = active;
+	_rangeFrom = active ? fromDate : 0;
+	_rangeTo = active ? toDate : 0;
+	if (active) {
+		const auto format = [](TimeId date) {
+			const auto parsed = base::unixtime::parse(date).date();
+			return QLocale().toString(parsed, QLocale::ShortFormat);
+		};
+		_rangeChip->setText(
+			format(fromDate) + u" \u2013 "_q + format(toDate) + u"  \u2715"_q);
+	}
+	_rangeChip->setVisible(active);
+	resizeToWidth(width());
+	_heightChanged.fire_copy(height());
+	update();
+}
+
 void FixedBar::showActionMenu() {
 	_actionMenu = base::make_unique_q<Ui::PopupMenu>(
 		_menuToggle.data(),
@@ -329,15 +381,31 @@ void FixedBar::showActionMenu() {
 	_actionMenu->addAction(tr::ayu_TopPostsRescan5000(tr::now), [=] {
 		_rescanRequests.fire(5000);
 	});
+	_actionMenu->addAction(tr::ayu_TopPostsScanRange(tr::now), [=] {
+		_dateRangeRequests.fire({});
+	});
 	_actionMenu->addAction(tr::ayu_TopPostsClearCache(tr::now), [=] {
 		_clearCacheRequests.fire({});
+	});
+	_actionMenu->addSeparator();
+	_actionMenu->addAction(tr::lng_close(tr::now), [=] {
+		_backRequests.fire({});
 	});
 	_actionMenu->setForcedOrigin(Ui::PanelAnimation::Origin::TopRight);
 	_actionMenu->popup(_menuToggle->mapToGlobal(QPoint(_menuToggle->width(), _menuToggle->height())));
 }
 
 int FixedBar::resizeGetHeight(int newWidth) {
-	_menuToggle->moveToRight(st::topPostsTabMargin, (st::topBarHeight - _menuToggle->height()) / 2);
+	_backButton->setGeometry(
+		0,
+		0,
+		st::topPostsBackButton.width,
+		st::topBarHeight);
+	_menuToggle->setGeometry(
+		newWidth - st::topPostsTabMargin - st::topBarMenuToggle.width,
+		0,
+		st::topBarMenuToggle.width,
+		st::topBarHeight);
 
 	const auto row2Top = st::topBarHeight;
 	const auto halfWidth = (newWidth - 4 * st::topPostsTabMargin) / 2;
@@ -356,7 +424,19 @@ int FixedBar::resizeGetHeight(int newWidth) {
 	filterX += filterBtnWidth + st::topPostsTabMargin;
 	_mediaFilter->setGeometry(filterX, row2Top, filterBtnWidth, st::topPostsTabHeight);
 
-	const auto baseHeight = st::topBarHeight + st::topPostsTabHeight + st::topPostsTabMargin;
+	auto baseHeight = st::topBarHeight + st::topPostsTabHeight + st::topPostsTabMargin;
+	if (_rangeActive) {
+		const auto limit = std::max(
+			newWidth - 2 * st::topPostsTabMargin,
+			1);
+		_rangeChip->resizeToWidth(std::min(
+			_rangeChip->textWidth() + 2 * st::topPostsTabMargin,
+			limit));
+		_rangeChip->moveToLeft(
+			st::topPostsTabMargin,
+			baseHeight + (st::topPostsTabHeight - _rangeChip->height()) / 2);
+		baseHeight += st::topPostsTabHeight;
+	}
 	if (_bannerVisible) {
 		_banner->setGeometry(0, baseHeight, newWidth, st::topPostsBannerHeight);
 		_cancelButton->moveToRight(st::topPostsBannerPadding.right(), (st::topPostsBannerHeight - _cancelButton->height()) / 2);
@@ -369,13 +449,29 @@ void FixedBar::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 	p.fillRect(e->rect(), st::topBarBg);
 
+	const auto titleLeft = _backButton->width() + st::topPostsTabMargin;
+	const auto nameLimit = _menuToggle->x() - st::topPostsTabMargin;
+
 	p.setFont(st::semiboldFont);
 	p.setPen(st::windowFg);
 	const auto title = tr::ayu_TopPostsTitle(tr::now);
-	const auto titleLeft = _backButton->width() + st::topPostsTabMargin;
 	const auto titleY = (st::topBarHeight - p.fontMetrics().height()) / 2
 		+ p.fontMetrics().ascent();
 	p.drawText(titleLeft, titleY, title);
+
+	const auto nameLeft = titleLeft
+		+ p.fontMetrics().horizontalAdvance(title)
+		+ 2 * st::topPostsTabMargin;
+	if (const auto available = nameLimit - nameLeft; available > 0) {
+		p.setFont(st::normalFont);
+		p.setPen(st::windowSubTextFg);
+		const auto nameY = (st::topBarHeight - p.fontMetrics().height()) / 2
+			+ p.fontMetrics().ascent();
+		p.drawText(
+			nameLeft,
+			nameY,
+			p.fontMetrics().elidedText(_peer->name(), Qt::ElideRight, available));
+	}
 }
 
 SectionWidget::SectionWidget(
@@ -436,6 +532,16 @@ void SectionWidget::setupControls() {
 	_fixedBar->rescanRequests(
 	) | rpl::on_next([=](int scanWindow) {
 		startScan(scanWindow);
+	}, lifetime());
+
+	_fixedBar->dateRangeRequests(
+	) | rpl::on_next([=] {
+		showDateRangePicker();
+	}, lifetime());
+
+	_fixedBar->clearDateRangeRequests(
+	) | rpl::on_next([=] {
+		clearDateRange();
 	}, lifetime());
 
 	_fixedBar->clearCacheRequests(
@@ -627,9 +733,11 @@ void SectionWidget::loadPosts() {
 		channelId,
 		_sortOrder,
 		_filter,
-		300,
+		AyuDatabase::kTopPostsDisplayLimit,
 		0,
-		lists);
+		lists,
+		_rangeFrom,
+		_rangeTo);
 
 	const auto scannedBefore = AyuDatabase::getChannelTopPostState(
 		channelId).oldestScannedId > 0;
@@ -665,11 +773,18 @@ void SectionWidget::loadPosts() {
 
 void SectionWidget::startScan(int scanWindow) {
 	if (_scanner) {
+		_fixedBar->showBanner(tr::ayu_TopPostsScanInProgress(tr::now), false);
 		return;
 	}
 	const auto channelId = getBareID(_peer);
 	const auto state = AyuDatabase::getChannelTopPostState(channelId);
 	const auto target = std::max(scanWindow, 1);
+	if (state.oldestScannedId > 0 && target <= state.scanWindow) {
+		_fixedBar->showBanner(
+			tr::ayu_TopPostsAlreadyCovered(tr::now, lt_count, state.scanWindow),
+			false);
+		return;
+	}
 	const auto resuming = (state.oldestScannedId > 0 && target > state.scanWindow);
 	const auto resumeOffset = resuming ? state.oldestScannedId : 0;
 	const auto alreadyScanned = resuming ? state.scanWindow : 0;
@@ -687,6 +802,102 @@ void SectionWidget::startScan(int scanWindow) {
 	_scanner->start();
 }
 
+void SectionWidget::startRangeScan(TimeId fromDate, TimeId toDate) {
+	if (_scanner) {
+		_fixedBar->showBanner(tr::ayu_TopPostsScanInProgress(tr::now), false);
+		return;
+	}
+	if (!fromDate || !toDate || fromDate > toDate) {
+		return;
+	}
+	const auto channelId = getBareID(_peer);
+	const auto ranges = AyuDatabase::getChannelTopPostScanRanges(channelId);
+	auto resume = MsgId(0);
+	auto alreadyScanned = 0;
+	for (const auto &range : ranges) {
+		if (range.fromDate == fromDate
+			&& range.toDate == toDate
+			&& range.toId > 0) {
+			resume = MsgId(range.toId);
+			alreadyScanned = range.messagesScanned;
+			break;
+		}
+	}
+	_rangeFrom = fromDate;
+	_rangeTo = toDate;
+	_fixedBar->setDateRange(fromDate, toDate);
+	_fixedBar->showBanner(tr::ayu_TopPostsScanning(tr::now), true);
+	_scanner = std::make_unique<Scanner>(
+		_peer,
+		alreadyScanned + kMaxRangeScanMessages,
+		resume,
+		alreadyScanned,
+		fromDate,
+		toDate);
+	_scanner->progress(
+	) | rpl::on_next([=](const ScanProgress &p) {
+		handleScanProgress(p);
+	}, _scannerLifetime);
+	_scanner->start();
+}
+
+void SectionWidget::setDateRange(TimeId fromDate, TimeId toDate) {
+	if (!fromDate || !toDate || fromDate > toDate) {
+		clearDateRange();
+		return;
+	}
+	if (_rangeFrom == fromDate && _rangeTo == toDate) {
+		return;
+	}
+	_rangeFrom = fromDate;
+	_rangeTo = toDate;
+	_fixedBar->setDateRange(_rangeFrom, _rangeTo);
+	loadPosts();
+}
+
+void SectionWidget::clearDateRange() {
+	if (!_rangeFrom && !_rangeTo) {
+		return;
+	}
+	_rangeFrom = _rangeTo = 0;
+	_fixedBar->setDateRange(0, 0);
+	loadPosts();
+}
+
+void SectionWidget::showDateRangePicker() {
+	const auto today = QDate::currentDate();
+	controller()->show(Box<Ui::CalendarBox>(Ui::CalendarBoxArgs{
+		.month = today,
+		.highlighted = today,
+		.callback = crl::guard(this, [=](QDate date, Fn<void()> close) {
+			close();
+			const auto fromDate = TimeId(date.startOfDay().toSecsSinceEpoch());
+			crl::on_main(this, [=] {
+				showRangeEndPicker(fromDate);
+			});
+		}),
+		.maxDate = today,
+	}));
+}
+
+void SectionWidget::showRangeEndPicker(TimeId fromDate) {
+	const auto from = base::unixtime::parse(fromDate).date();
+	controller()->show(Box<Ui::CalendarBox>(Ui::CalendarBoxArgs{
+		.month = from,
+		.highlighted = from,
+		.callback = crl::guard(this, [=](QDate date, Fn<void()> close) {
+			close();
+			const auto endOfDay = TimeId(
+				date.startOfDay().toSecsSinceEpoch() + 86399);
+			const auto toDate = std::max(fromDate, endOfDay);
+			setDateRange(fromDate, toDate);
+			startRangeScan(fromDate, toDate);
+		}),
+		.minDate = from,
+		.maxDate = QDate::currentDate(),
+	}));
+}
+
 void SectionWidget::cancelScan() {
 	if (_scanner) {
 		_scanner->cancel();
@@ -700,12 +911,14 @@ void SectionWidget::cancelScan() {
 void SectionWidget::handleScanProgress(const ScanProgress &p) {
 	switch (p.state) {
 	case ScanState::Scanning: {
-		const auto text = tr::ayu_TopPostsScanningProgress(
-			tr::now,
-			lt_current,
-			QString::number(p.scannedCount),
-			lt_total,
-			QString::number(p.targetCount));
+		const auto text = p.dateRange
+			? tr::ayu_TopPostsScanningCount(tr::now, lt_count, p.scannedCount)
+			: tr::ayu_TopPostsScanningProgress(
+				tr::now,
+				lt_current,
+				QString::number(p.scannedCount),
+				lt_total,
+				QString::number(p.targetCount));
 		_fixedBar->showBanner(text, true);
 		break;
 	}
@@ -826,6 +1039,8 @@ void SectionWidget::handleSyncProgress(const SyncProgress &p) {
 
 void SectionWidget::clearCache() {
 	AyuDatabase::clearChannelPosts(getBareID(_peer));
+	_rangeFrom = _rangeTo = 0;
+	_fixedBar->setDateRange(0, 0);
 	if (_inner) {
 		_inner->setEmptyMessage(tr::ayu_TopPostsCacheCleared(tr::now));
 		_inner->setPosts({});
@@ -833,12 +1048,10 @@ void SectionWidget::clearCache() {
 }
 
 void SectionWidget::saveViewState() {
-	const auto channelId = getBareID(_peer);
-	auto state = AyuDatabase::getChannelTopPostState(channelId);
-	state.channelId = channelId;
-	state.sortOrder = static_cast<int>(_sortOrder);
-	state.filter = static_cast<int>(_filter);
-	AyuDatabase::saveChannelTopPostState(state);
+	AyuDatabase::saveChannelTopPostView(
+		getBareID(_peer),
+		static_cast<int>(_sortOrder),
+		static_cast<int>(_filter));
 }
 
 SectionMemento::SectionMemento(

@@ -9222,6 +9222,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "ayu_TopPostsRescan1000" = "Rescan (1000 messages)";
 "ayu_TopPostsRescan2000" = "Rescan (2000 messages)";
 "ayu_TopPostsRescan5000" = "Rescan (5000 messages)";
+"ayu_TopPostsScanInProgress" = "A scan is already running.";
+"ayu_TopPostsScanRange" = "Scan Date Range...";
+"ayu_TopPostsScanningCount#one" = "Scanned {count} message...";
+"ayu_TopPostsScanningCount#other" = "Scanned {count} messages...";
+"ayu_TopPostsAlreadyCovered#one" = "Already scanned {count} message.";
+"ayu_TopPostsAlreadyCovered#other" = "Already scanned {count} messages.";
 "ayu_TopPostsEmptyInitial" = "No top posts cached yet.\nStarting automatic scan...";
 "ayu_TopPostsEmptyMatching" = "No top posts found matching criteria.";
 "ayu_TopPostsEmptyDocs" = "No document files found in top posts.";

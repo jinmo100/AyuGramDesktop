@@ -390,7 +390,9 @@ void IncrementalSyncController::finish(
 			_updatedPostsStream.fire_copy(_allUpdatedPosts);
 			crl::async([this, posts = _allUpdatedPosts, channelId = _channelId, weak = base::make_weak(this), finalState, error] {
 				AyuDatabase::saveChannelPosts(posts);
-				AyuDatabase::truncateChannelPosts(channelId, 300);
+				AyuDatabase::truncateChannelPosts(
+					channelId,
+					AyuDatabase::kTopPostsStorageLimit);
 				crl::on_main(weak, [=] {
 					_progress.state = finalState;
 					_progress.errorMessage = error;

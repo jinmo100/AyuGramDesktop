@@ -23,6 +23,9 @@ public:
 
 namespace AyuDatabase {
 
+inline constexpr auto kTopPostsDisplayLimit = 300;
+inline constexpr auto kTopPostsStorageLimit = 3000;
+
 void initialize();
 
 void addEditedMessage(const EditedMessage &message);
@@ -95,7 +98,16 @@ void removePosts(ID channelId, const std::vector<int> &messageIds);
 
 ChannelTopPostState getChannelTopPostState(ID channelId);
 void saveChannelTopPostState(const ChannelTopPostState &state);
+void saveChannelTopPostView(ID channelId, int sortOrder, int filter);
+void extendChannelTopPostCoverage(
+	ID channelId,
+	int scanWindow,
+	int oldestScannedId);
 void touchChannelTopPostAccess(ID channelId);
+
+void saveChannelTopPostScanRange(const ChannelTopPostScanRange &range);
+std::vector<ChannelTopPostScanRange> getChannelTopPostScanRanges(ID channelId);
+void clearChannelTopPostScanRanges(ID channelId);
 
 std::vector<ChannelTopPost> getChannelTopPosts(
 	ID channelId,
@@ -103,7 +115,9 @@ std::vector<ChannelTopPost> getChannelTopPosts(
 	TopPostsFilter filter = TopPostsFilter::All,
 	int totalLimit = 300,
 	int offset = 0,
-	const TopPostsReactionLists &lists = TopPostsReactionLists());
+	const TopPostsReactionLists &lists = TopPostsReactionLists(),
+	int fromDate = 0,
+	int toDate = 0);
 bool hasChannelTopPosts(ID channelId);
 int getChannelTopPostsCount(ID channelId);
 std::vector<int> getChannelTopPostMessageIds(ID channelId);

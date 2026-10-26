@@ -9,6 +9,7 @@
 #include "ayu/data/ayu_database.h"
 #include "ayu/data/entities.h"
 #include "ayu/features/top_posts/top_posts_aggregator.h"
+#include "base/basic_types.h"
 #include "base/timer.h"
 #include "base/weak_ptr.h"
 #include "mtproto/sender.h"
@@ -24,6 +25,8 @@ inline constexpr auto kDefaultScanWindow = 1000;
 inline constexpr auto kMinScanWindow = 100;
 inline constexpr auto kMaxScanWindow = 5000;
 inline constexpr auto kBatchSize = 100;
+inline constexpr auto kMaxRangeScanMessages = 20000;
+inline constexpr auto kMaxRangeScanTotal = 200000;
 inline constexpr auto kThrottleMinMs = 150;
 inline constexpr auto kThrottleMaxMs = 250;
 
@@ -42,6 +45,7 @@ struct ScanProgress {
 	int targetCount = 0;
 	int matchedCount = 0;
 	int floodWaitSeconds = 0;
+	bool dateRange = false;
 	QString errorMessage;
 };
 
@@ -60,7 +64,9 @@ public:
 		not_null<PeerData*> peer,
 		int scanWindow = kDefaultScanWindow,
 		MsgId resumeOffset = 0,
-		int alreadyScanned = 0);
+		int alreadyScanned = 0,
+		TimeId rangeFrom = 0,
+		TimeId rangeTo = 0);
 	~Scanner();
 
 	void start();
@@ -72,6 +78,8 @@ public:
 	[[nodiscard]] ID channelId() const;
 	[[nodiscard]] int scanWindow() const;
 	[[nodiscard]] MsgId resumeOffset() const;
+	[[nodiscard]] TimeId rangeFrom() const;
+	[[nodiscard]] TimeId rangeTo() const;
 
 	[[nodiscard]] ScanProgress progressValue() const;
 	[[nodiscard]] rpl::producer<ScanProgress> progress() const;
@@ -87,17 +95,24 @@ private:
 	void handleError(const MTP::Error &error);
 	void handleFloodWait(int seconds);
 	void finish(ScanState finalState, const QString &error = QString());
+	void writeResultsAsync(
+		std::vector<ChannelTopPost> posts,
+		ScanState finalState,
+		const QString &error);
 
 	const not_null<PeerData*> _peer;
 	const ID _channelId = 0;
 	const int _scanWindow = kDefaultScanWindow;
 	const MsgId _resumeOffset = 0;
 	const int _alreadyScanned = 0;
+	const TimeId _rangeFrom = 0;
+	const TimeId _rangeTo = 0;
 
 	MTP::Sender _api;
 	mtpRequestId _requestId = 0;
 
 	MsgId _offsetId = 0;
+	MsgId _rangeFirstId = 0;
 	int _scannedCount = 0;
 	int _matchedCount = 0;
 

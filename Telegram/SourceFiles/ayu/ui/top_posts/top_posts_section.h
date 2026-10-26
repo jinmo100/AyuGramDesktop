@@ -63,6 +63,18 @@ public:
 		_backHandler = std::move(handler);
 	}
 
+	void setDateRange(TimeId fromDate, TimeId toDate);
+	void clearDateRange();
+	[[nodiscard]] bool hasDateRange() const {
+		return (_rangeFrom > 0) && (_rangeTo > 0);
+	}
+	[[nodiscard]] TimeId dateRangeFrom() const {
+		return _rangeFrom;
+	}
+	[[nodiscard]] TimeId dateRangeTo() const {
+		return _rangeTo;
+	}
+
 	bool floatPlayerHandleWheelEvent(QEvent *e) override;
 	QRect floatPlayerAvailableRect() override;
 
@@ -79,11 +91,14 @@ private:
 	void loadPosts();
 	void saveViewState();
 	void startScan(int scanWindow = kDefaultScanWindow);
+	void startRangeScan(TimeId fromDate, TimeId toDate);
+	void showDateRangePicker();
 	void cancelScan();
 	void startSync();
 	void cancelSync();
 	void clearCache();
 	void handleScanProgress(const ScanProgress &p);
+	void showRangeEndPicker(TimeId fromDate);
 	void handleSyncProgress(const SyncProgress &p);
 	void onScroll();
 	void updateLayout();
@@ -92,6 +107,8 @@ private:
 	AyuDatabase::TopPostsSortOrder _sortOrder = AyuDatabase::TopPostsSortOrder::Reactions;
 	AyuDatabase::TopPostsFilter _filter = AyuDatabase::TopPostsFilter::All;
 	bool _initialScanAttempted = false;
+	TimeId _rangeFrom = 0;
+	TimeId _rangeTo = 0;
 	Fn<void()> _backHandler;
 
 	object_ptr<FixedBar> _fixedBar;

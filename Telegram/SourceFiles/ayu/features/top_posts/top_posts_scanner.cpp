@@ -124,12 +124,19 @@ Scanner::Scanner(
 	not_null<PeerData*> peer,
 	int scanWindow,
 	MsgId resumeOffset,
-	int alreadyScanned)
+	int alreadyScanned,
+	TimeId rangeFrom,
+	TimeId rangeTo)
 : _peer(peer)
 , _channelId(getBareID(peer))
-, _scanWindow(std::clamp(scanWindow, 1, kMaxScanWindow))
+, _scanWindow(std::clamp(
+	scanWindow,
+	1,
+	(rangeFrom > 0) ? kMaxRangeScanTotal : kMaxScanWindow))
 , _resumeOffset(resumeOffset)
 , _alreadyScanned(std::max(alreadyScanned, 0))
+, _rangeFrom(std::max(rangeFrom, TimeId(0)))
+, _rangeTo(std::max(rangeTo, TimeId(0)))
 , _api(&peer->session().mtp()) {
 	_throttleTimer.setCallback([=] {
 		requestNextBatch();
@@ -151,11 +158,13 @@ void Scanner::start() {
 	_scannedCount = _alreadyScanned;
 	_matchedCount = 0;
 	_offsetId = _resumeOffset;
+	_rangeFirstId = 0;
 	_allParsedPosts.clear();
 	_aggregator.reset();
 	_progress.scannedCount = _scannedCount;
 	_progress.matchedCount = 0;
 	_progress.targetCount = _scanWindow;
+	_progress.dateRange = (_rangeFrom > 0);
 	_progress.state = ScanState::Scanning;
 	_progress.errorMessage.clear();
 	_progress.floodWaitSeconds = 0;
@@ -207,6 +216,14 @@ MsgId Scanner::resumeOffset() const {
 	return _resumeOffset;
 }
 
+TimeId Scanner::rangeFrom() const {
+	return _rangeFrom;
+}
+
+TimeId Scanner::rangeTo() const {
+	return _rangeTo;
+}
+
 ScanProgress Scanner::progressValue() const {
 	return _progress;
 }
@@ -243,10 +260,14 @@ void Scanner::requestNextBatch() {
 	const auto remaining = _scanWindow - _scannedCount;
 	const auto batchLimit = std::clamp(remaining, 1, kBatchSize);
 
+	const auto offsetDate = (_rangeTo > 0 && !_offsetId)
+		? (_rangeTo + 1)
+		: 0;
+
 	_requestId = _api.request(MTPmessages_GetHistory(
 		_peer->input(),
 		MTP_int(_offsetId.bare),
-		MTP_int(0),
+		MTP_int(offsetDate),
 		MTP_int(0),
 		MTP_int(batchLimit),
 		MTP_int(0),
@@ -284,6 +305,7 @@ void Scanner::handleResponse(const MTPmessages_Messages &result) {
 
 	const auto scanTime = base::unixtime::now();
 	auto oldestId = MsgId(0);
+	auto oldestDate = TimeId(0);
 
 	for (const auto &msg : *messages) {
 		++_scannedCount;
@@ -297,6 +319,12 @@ void Scanner::handleResponse(const MTPmessages_Messages &result) {
 		const auto msgId = item->id;
 		if (!oldestId || msgId < oldestId) {
 			oldestId = msgId;
+		}
+		if (!_rangeFirstId) {
+			_rangeFirstId = msgId;
+		}
+		if (!oldestDate || item->date() < oldestDate) {
+			oldestDate = item->date();
 		}
 		if (item->isService()) {
 			continue;
@@ -330,9 +358,14 @@ void Scanner::handleResponse(const MTPmessages_Messages &result) {
 
 	_progressStream.fire_copy(_progress);
 
+	const auto reachedRangeStart = (_rangeFrom > 0)
+		&& (oldestDate > 0)
+		&& (oldestDate < _rangeFrom);
+
 	if (!oldestId
 		|| oldestId == _offsetId
 		|| _scannedCount >= _scanWindow
+		|| reachedRangeStart
 		|| messages->size() < kBatchSize) {
 		finish(ScanState::Completed);
 		return;
@@ -394,46 +427,12 @@ void Scanner::finish(ScanState finalState, const QString &error) {
 			_batchParsedStream.fire_copy(flushed);
 		}
 		if (_autoSave) {
-			crl::async([this, posts = flushed, channelId = _channelId, oldest = _offsetId.bare, depth = _scannedCount, weak = base::make_weak(this), finalState, error] {
-				if (!posts.empty()) {
-					AyuDatabase::saveChannelPosts(posts);
-				}
-				AyuDatabase::truncateChannelPosts(channelId, 300);
-				if (oldest > 0) {
-					auto state = AyuDatabase::getChannelTopPostState(channelId);
-					state.channelId = channelId;
-					state.scanWindow = depth;
-					state.oldestScannedId = oldest;
-					state.lastScanTime = base::unixtime::now();
-					AyuDatabase::saveChannelTopPostState(state);
-				}
-				crl::on_main(weak, [=] {
-					_progress.state = finalState;
-					_progress.errorMessage = error;
-					_progress.floodWaitSeconds = 0;
-					_progressStream.fire_copy(_progress);
-				});
-			});
+			writeResultsAsync(flushed, finalState, error);
 			return;
 		}
-	} else if (finalState == ScanState::Cancelled && _autoSave) {
-		crl::async([this, channelId = _channelId, oldest = _offsetId.bare, depth = _scannedCount, weak = base::make_weak(this), finalState, error] {
-			AyuDatabase::truncateChannelPosts(channelId, 300);
-			if (oldest > 0) {
-				auto state = AyuDatabase::getChannelTopPostState(channelId);
-				state.channelId = channelId;
-				state.scanWindow = depth;
-				state.oldestScannedId = oldest;
-				state.lastScanTime = base::unixtime::now();
-				AyuDatabase::saveChannelTopPostState(state);
-			}
-			crl::on_main(weak, [=] {
-				_progress.state = finalState;
-				_progress.errorMessage = error;
-				_progress.floodWaitSeconds = 0;
-				_progressStream.fire_copy(_progress);
-			});
-		});
+	} else if ((finalState == ScanState::Cancelled
+		|| finalState == ScanState::Failed) && _autoSave) {
+		writeResultsAsync({}, finalState, error);
 		return;
 	}
 
@@ -441,6 +440,47 @@ void Scanner::finish(ScanState finalState, const QString &error) {
 	_progress.errorMessage = error;
 	_progress.floodWaitSeconds = 0;
 	_progressStream.fire_copy(_progress);
+}
+
+void Scanner::writeResultsAsync(
+		std::vector<ChannelTopPost> posts,
+		ScanState finalState,
+		const QString &error) {
+	const auto channelId = _channelId;
+	const auto oldest = _offsetId.bare;
+	const auto newest = _rangeFirstId.bare;
+	const auto depth = _scannedCount;
+	const auto rangeFrom = _rangeFrom;
+	const auto rangeTo = _rangeTo;
+	const auto now = base::unixtime::now();
+	auto weak = base::make_weak(this);
+	crl::async([=, this, posts = std::move(posts)] {
+		if (!posts.empty()) {
+			AyuDatabase::saveChannelPosts(posts);
+		}
+		AyuDatabase::truncateChannelPosts(
+			channelId,
+			AyuDatabase::kTopPostsStorageLimit);
+		if (rangeFrom > 0 && rangeTo > 0) {
+			auto range = ChannelTopPostScanRange();
+			range.channelId = channelId;
+			range.fromDate = rangeFrom;
+			range.toDate = rangeTo;
+			range.fromId = newest;
+			range.toId = oldest;
+			range.messagesScanned = depth;
+			range.lastScanTime = now;
+			AyuDatabase::saveChannelTopPostScanRange(range);
+		} else if (oldest > 0) {
+			AyuDatabase::extendChannelTopPostCoverage(channelId, depth, oldest);
+		}
+		crl::on_main(weak, [=] {
+			_progress.state = finalState;
+			_progress.errorMessage = error;
+			_progress.floodWaitSeconds = 0;
+			_progressStream.fire_copy(_progress);
+		});
+	});
 }
 
 } // namespace TopPosts

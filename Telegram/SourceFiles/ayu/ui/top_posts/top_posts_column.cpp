@@ -11,11 +11,14 @@
 #include "dialogs/dialogs_widget.h"
 #include "mainwidget.h"
 #include "ui/effects/animation_value.h"
+#include "ui/ui_utility.h"
 #include "window/window_adaptive.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
 
 #include <QtGui/QKeyEvent>
+#include <QtGui/QKeySequence>
+#include <QShortcut>
 
 namespace TopPosts {
 namespace {
@@ -33,6 +36,12 @@ Column::Column(
 	if (const auto container = parentWidget()) {
 		container->installEventFilter(this);
 	}
+	const auto escape = Ui::CreateChild<QShortcut>(this);
+	escape->setKey(QKeySequence(Qt::Key_Escape));
+	escape->setContext(Qt::WidgetWithChildrenShortcut);
+	QObject::connect(escape, &QShortcut::activated, this, [=] {
+		hideColumn();
+	});
 }
 
 Column::~Column() = default;

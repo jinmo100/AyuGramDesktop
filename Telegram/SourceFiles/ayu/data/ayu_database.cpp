@@ -13,6 +13,7 @@
 #include "rpl/event_stream.h"
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <mutex>
 
@@ -205,6 +206,17 @@ auto storage = make_storage(
 		make_column("oldestScannedId", &ChannelTopPostState::oldestScannedId),
 		make_column("lastScanTime", &ChannelTopPostState::lastScanTime),
 		make_column("lastAccessTime", &ChannelTopPostState::lastAccessTime)
+	),
+	make_table<ChannelTopPostScanRange>(
+		"ChannelTopPostScanRange",
+		make_column("id", &ChannelTopPostScanRange::id, primary_key().autoincrement()),
+		make_column("channelId", &ChannelTopPostScanRange::channelId),
+		make_column("fromDate", &ChannelTopPostScanRange::fromDate),
+		make_column("toDate", &ChannelTopPostScanRange::toDate),
+		make_column("fromId", &ChannelTopPostScanRange::fromId),
+		make_column("toId", &ChannelTopPostScanRange::toId),
+		make_column("messagesScanned", &ChannelTopPostScanRange::messagesScanned),
+		make_column("lastScanTime", &ChannelTopPostScanRange::lastScanTime)
 	)
 );
 
@@ -934,6 +946,9 @@ void clearChannelPosts(ID channelId) {
 		storage.remove_all<ChannelTopPost>(
 			where(column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
 		);
+		storage.remove_all<ChannelTopPostScanRange>(
+			where(column<ChannelTopPostScanRange>(&ChannelTopPostScanRange::channelId) == channelId)
+		);
 		storage.update_all(
 			set(
 				c(&ChannelTopPostState::scanWindow) = 0,
@@ -954,6 +969,7 @@ void clearAllChannelPosts() {
 	std::lock_guard lock(databaseMutex);
 	try {
 		storage.remove_all<ChannelTopPost>();
+		storage.remove_all<ChannelTopPostScanRange>();
 		storage.update_all(set(
 			c(&ChannelTopPostState::scanWindow) = 0,
 			c(&ChannelTopPostState::oldestScannedId) = 0,
@@ -1032,7 +1048,9 @@ std::vector<ChannelTopPost> getChannelTopPosts(
 	TopPostsFilter filter,
 	int totalLimit,
 	int offset,
-	const TopPostsReactionLists &lists) {
+	const TopPostsReactionLists &lists,
+	int fromDate,
+	int toDate) {
 	std::lock_guard lock(databaseMutex);
 	try {
 		const auto isDoc = (column<ChannelTopPost>(&ChannelTopPost::mediaType)
@@ -1042,7 +1060,11 @@ std::vector<ChannelTopPost> getChannelTopPosts(
 			|| column<ChannelTopPost>(&ChannelTopPost::mediaType) == static_cast<int>(TopPostMediaType::Video)
 			|| column<ChannelTopPost>(&ChannelTopPost::mediaType) == static_cast<int>(TopPostMediaType::Grouped)
 		);
-		const auto baseWhere = (column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId);
+		const auto dateFrom = (fromDate > 0) ? fromDate : 0;
+		const auto dateTo = (toDate > 0) ? toDate : std::numeric_limits<int>::max();
+		const auto baseWhere = (column<ChannelTopPost>(&ChannelTopPost::channelId) == channelId)
+			and (column<ChannelTopPost>(&ChannelTopPost::date) >= dateFrom)
+			and (column<ChannelTopPost>(&ChannelTopPost::date) <= dateTo);
 
 		auto executeQuery = [&](auto whereClause) -> std::vector<ChannelTopPost> {
 			if (sortOrder == TopPostsSortOrder::Reactions) {
@@ -1242,6 +1264,108 @@ void touchChannelTopPostAccess(ID channelId) {
 		storage.replace(state);
 	} catch (const std::exception &ex) {
 		LOG(("Failed to touch channel top post access: %1").arg(ex.what()));
+	}
+}
+
+void saveChannelTopPostView(ID channelId, int sortOrder, int filter) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		if (storage.get_pointer<ChannelTopPostState>(channelId)) {
+			storage.update_all(
+				set(
+					c(&ChannelTopPostState::sortOrder) = sortOrder,
+					c(&ChannelTopPostState::filter) = filter
+				),
+				where(column<ChannelTopPostState>(&ChannelTopPostState::channelId) == channelId));
+			return;
+		}
+		auto state = ChannelTopPostState();
+		state.channelId = channelId;
+		state.sortOrder = sortOrder;
+		state.filter = filter;
+		storage.replace(state);
+	} catch (const std::exception &ex) {
+		LOG(("Failed to save channel top post view: %1").arg(ex.what()));
+	}
+}
+
+void extendChannelTopPostCoverage(
+		ID channelId,
+		int scanWindow,
+		int oldestScannedId) {
+	if (oldestScannedId <= 0) {
+		return;
+	}
+	std::lock_guard lock(databaseMutex);
+	try {
+		const auto now = base::unixtime::now();
+		const auto existing = storage.get_pointer<ChannelTopPostState>(channelId);
+		if (!existing) {
+			auto state = ChannelTopPostState();
+			state.channelId = channelId;
+			state.scanWindow = scanWindow;
+			state.oldestScannedId = oldestScannedId;
+			state.lastScanTime = now;
+			storage.replace(state);
+			return;
+		}
+		const auto deeper = (existing->oldestScannedId == 0)
+			|| (oldestScannedId < existing->oldestScannedId);
+		if (!deeper) {
+			storage.update_all(
+				set(c(&ChannelTopPostState::lastScanTime) = now),
+				where(column<ChannelTopPostState>(&ChannelTopPostState::channelId) == channelId));
+			return;
+		}
+		storage.update_all(
+			set(
+				c(&ChannelTopPostState::scanWindow) = scanWindow,
+				c(&ChannelTopPostState::oldestScannedId) = oldestScannedId,
+				c(&ChannelTopPostState::lastScanTime) = now
+			),
+			where(column<ChannelTopPostState>(&ChannelTopPostState::channelId) == channelId));
+	} catch (const std::exception &ex) {
+		LOG(("Failed to extend channel top post coverage: %1").arg(ex.what()));
+	}
+}
+
+void saveChannelTopPostScanRange(const ChannelTopPostScanRange &range) {
+	if (!range.channelId || !range.fromDate || !range.toDate) {
+		return;
+	}
+	std::lock_guard lock(databaseMutex);
+	try {
+		storage.remove_all<ChannelTopPostScanRange>(
+			where(column<ChannelTopPostScanRange>(&ChannelTopPostScanRange::channelId) == range.channelId
+				and column<ChannelTopPostScanRange>(&ChannelTopPostScanRange::fromDate) == range.fromDate
+				and column<ChannelTopPostScanRange>(&ChannelTopPostScanRange::toDate) == range.toDate));
+		auto copy = range;
+		copy.id = 0;
+		storage.insert(copy);
+	} catch (const std::exception &ex) {
+		LOG(("Failed to save channel top post scan range: %1").arg(ex.what()));
+	}
+}
+
+std::vector<ChannelTopPostScanRange> getChannelTopPostScanRanges(ID channelId) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		return storage.get_all<ChannelTopPostScanRange>(
+			where(column<ChannelTopPostScanRange>(&ChannelTopPostScanRange::channelId) == channelId),
+			order_by(column<ChannelTopPostScanRange>(&ChannelTopPostScanRange::fromDate)).asc());
+	} catch (const std::exception &ex) {
+		LOG(("Failed to get channel top post scan ranges: %1").arg(ex.what()));
+		return {};
+	}
+}
+
+void clearChannelTopPostScanRanges(ID channelId) {
+	std::lock_guard lock(databaseMutex);
+	try {
+		storage.remove_all<ChannelTopPostScanRange>(
+			where(column<ChannelTopPostScanRange>(&ChannelTopPostScanRange::channelId) == channelId));
+	} catch (const std::exception &ex) {
+		LOG(("Failed to clear channel top post scan ranges: %1").arg(ex.what()));
 	}
 }
 }

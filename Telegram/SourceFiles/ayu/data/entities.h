@@ -212,3 +212,27 @@ public:
 	}
 
 };
+
+class ChannelTopPostScanRange
+{
+public:
+	ID id = 0;
+	ID channelId = 0;
+	int fromDate = 0;
+	int toDate = 0;
+	int fromId = 0;
+	int toId = 0;
+	int messagesScanned = 0;
+	int lastScanTime = 0;
+
+	bool operator==(const ChannelTopPostScanRange &other) const {
+		return channelId == other.channelId
+			&& fromDate == other.fromDate
+			&& toDate == other.toDate
+			&& fromId == other.fromId
+			&& toId == other.toId
+			&& messagesScanned == other.messagesScanned
+			&& lastScanTime == other.lastScanTime;
+	}
+
+};
